@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--debug属性配置是否打印日志框架本身的运行情况信息-->
+<configuration debug="false">
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <!--自定义日志存放目录-->
+    <springProperty scope="context" name="port" source="server.port"/>
+    <!-- 本地环境 -->
+    <springProfile name="dev">
+        <property name="LOG_HOME_PROD" value="/Users/ymw/log"/> <!-- 本地日志路径 -->
+    </springProfile>
+
+    <!-- 生产环境 -->
+    <springProfile name="prod">
+        <property name="LOG_HOME_PROD" value="/www/wwwlogs/cui/edu/${port}"/> <!-- 线上路径 -->
+    </springProfile>
+
+
+
+    <!--只在控制台输出日志组件-->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>[%d{yyyy-MM-dd' 'HH:mm:ss.sss}] [%C] [%t] [%L] [%-5p] %m%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!--INFO日志文件输出组件-->
+    <appender name="FILE_INFO" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!--当前日志输出文件位置，目录不存在时会自动创建-->
+        <file>${LOG_HOME_PROD}/info.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!--每天滚动，满足条件时滚动生成的文件名格式-->
+            <fileNamePattern>${LOG_HOME_PROD}/info.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>62</maxHistory> <!-- 保留最近62天的日志文件 -->
+        </rollingPolicy>
+        <!--日志输出格式，编码以及信息格式-->
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50}[%L] - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+
+    <!--druid慢查询日志输出，没有使用druid监控的去掉这部分以及下面的一个相关logger-->
+    <appender name="Druid_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!-- 正在记录的日志文件的路径及文件名 -->
+        <file>${LOG_HOME_PROD}/log_druid.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME_PROD}/druid_info/log-druid-%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <!-- 追加方式记录日志 -->
+        <append>true</append>
+        <!-- 日志文件的格式 -->
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger Line:%-3L - %msg%n</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+    <!--druid相关logger，additivity="false" 设置打印信息行为不向上级传递-->
+    <logger name="com.alibaba.druid.filter.stat.StatFilter" level="ERROR" additivity="false">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="Druid_FILE"/>
+    </logger>
+
+    <!--logger用来配置绑定某个包或者类下的日志输出等级，以及使用哪一个appender来输出日志-->
+    <!--additivity配置是否向上级logger传递打印信息行为，该logger的上级为root，默认true-->
+    <logger name="com.cui.platform" level="DEBUG" additivity="false">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE_INFO"/>
+    </logger>
+
+    <logger name="org.springframework.web" level="INFO"/>
+
+    <!-- 开发环境 -->
+    <springProfile name="dev">
+        <!-- 日志输出级别 -->
+        <root level="INFO">
+            <appender-ref ref="STDOUT"/>
+        </root>
+    </springProfile>
+
+    <!-- 测试环境 -->
+    <springProfile name="test">
+        <!-- 日志输出级别 -->
+        <root level="INFO">
+            <appender-ref ref="FILE_INFO"/>
+            <appender-ref ref="STDOUT"/>
+            <appender-ref ref="Druid_FILE"/>
+        </root>
+    </springProfile>
+
+    <!-- 生产环境 -->
+    <springProfile name="prod">
+        <!-- 日志输出级别 -->
+        <root level="INFO">
+            <appender-ref ref="FILE_INFO"/>
+            <appender-ref ref="STDOUT"/>
+            <appender-ref ref="Druid_FILE"/>
+        </root>
+    </springProfile>
+
+</configuration>

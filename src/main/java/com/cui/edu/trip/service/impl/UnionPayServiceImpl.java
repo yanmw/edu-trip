@@ -56,7 +56,6 @@ public class UnionPayServiceImpl implements UnionPayService {
     @Value("${unionPay.notifyUrl}")
     private String notifyUrl;
 
-
     /**
      * 支付宝小程序：支付接口地址
      */
@@ -114,6 +113,7 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setMerOrderId(orderId);
         body.setTargetOrderId(targetOrderId);
         body.setRefundAmount(money);
+        // 退款必须使用原订单所属博物馆的银联商户号和终端号。
         body.setMid(mid);
         body.setTid(tid);
         body.setRefundOrderId(refundOrderId);

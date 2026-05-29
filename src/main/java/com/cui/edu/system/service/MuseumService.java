@@ -18,7 +18,7 @@ import java.util.List;
 public interface MuseumService extends IService<Museum> {
 
     /**
-     * 保存博物馆；新增时首字母缩写重复则返回false。
+     * 保存博物馆；新增时mid重复则返回false。
      */
     boolean saveMuseum(Museum record);
 

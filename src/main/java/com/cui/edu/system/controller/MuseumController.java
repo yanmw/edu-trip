@@ -39,12 +39,14 @@ public class MuseumController {
     @ApiOperation(value = "新增/修改博物馆")
     public HttpResult save(@RequestBody Museum record) {
         if (BeanUtil.isNotEmpty(record)) {
-            if (record.getId() == null && StringUtils.isBlank(record.getName())) {
+            // 新增博物馆必须配置银联商户号，后续下单支付会按博物馆读取mid。
+            if (record.getId() == null && (StringUtils.isBlank(record.getName()) || StringUtils.isBlank(record.getMid()))) {
                 return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
             }
             boolean saved = museumService.saveMuseum(record);
             if (!saved) {
-                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "首字母缩写已存在");
+                // mid存在数据库唯一约束，重复时作为业务校验结果返回给前端。
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "mid已存在");
             }
             return HttpResult.ok(record.getId());
         } else {

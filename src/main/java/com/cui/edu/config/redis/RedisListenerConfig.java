@@ -1,6 +1,7 @@
 package com.cui.edu.config.redis;
 
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.trip.service.OrderService;
 import com.cui.edu.util.RedisUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,9 @@ public class RedisListenerConfig extends KeyExpirationEventMessageListener {
     @Autowired
     private RedisUtils redisUtils;
 
+    @Autowired
+    private OrderService orderService;
+
     public RedisListenerConfig(RedisMessageListenerContainer listenerContainer) {
         super(listenerContainer);
 
@@ -48,16 +52,21 @@ public class RedisListenerConfig extends KeyExpirationEventMessageListener {
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
-        // 获取过期的key,可以做自己的业务
+        // 下单时写入Redis的key就是订单号，过期后用它做支付状态补偿。
         String expiredKey = message.toString();
         if (expiredKey.contains(SysConstants.SET_NX)) {
             log.info("锁，不再处理");
             return;
         }
-        // 利用redis setIfAbsent命令,如果为空set返回true,如果不为空返回false,类似setnx加锁操作
+        // 多实例部署时可能同时收到过期事件，用短期SETNX避免同一订单重复处理。
         Boolean b = redisUtils.setIfAbsent(SysConstants.SET_NX + expiredKey, String.valueOf(System.currentTimeMillis()), 3);
         if (b) {
             log.info("过期值：{}", expiredKey);
+            try {
+                orderService.handlePayingOrderExpired(expiredKey);
+            } catch (Exception e) {
+                log.error("订单过期处理失败，订单号：{}", expiredKey, e);
+            }
         } else {
             log.info("别的服务处理过了，俺就不处理啦");
         }

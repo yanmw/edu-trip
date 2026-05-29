@@ -34,8 +34,12 @@ public interface SysConstants {
 	String SET_NX = "setNx:";
 
 	/**
-	 * 编号分隔符
+	 * 银联-支付成功
 	 */
-	String HF_PREFIX = "-";
+	String TRADE_SUCCESS = "TRADE_SUCCESS";
+	/**
+	 * 银联-退款
+	 */
+	String TRADE_REFUND = "TRADE_REFUND";
 
 }

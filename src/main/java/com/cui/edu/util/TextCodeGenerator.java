@@ -49,28 +49,4 @@ public class TextCodeGenerator {
             throw new MyException(HttpStatus.SC_INTERNAL_SERVER_ERROR, "获取锁失败");
         }
     }
-
-    public String generate(String name) {
-        // 通过分布式事务锁的方式获取唯一单号
-        Lock lock = new Lock("createOrderId", "lock.");
-        boolean b = distributedLockHandler.tryLock(lock);
-        if (b) {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyMMddHHmmssSSS");
-            // 只保留年份的最后一位 例如：40830154652513
-            String formattedDateTime = LocalDateTime.now().format(formatter).substring(1);
-            // 前缀 + 时间 + 随机1位数
-            String result = prefix + formattedDateTime + name;
-            try {
-                Thread.sleep(1);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            distributedLockHandler.releaseLock(lock);
-            return result;
-        } else {
-            log.info("获取锁失败");
-            distributedLockHandler.releaseLock(lock);
-            throw new MyException(HttpStatus.SC_INTERNAL_SERVER_ERROR, "获取锁失败");
-        }
-    }
 }

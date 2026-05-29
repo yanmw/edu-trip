@@ -6,12 +6,12 @@ import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.trip.service.WechatMiniProgramService;
 import com.cui.edu.vo.trip.WechatOpenidResultVO;
-import com.cui.edu.vo.trip.WechatOpenidVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,14 +26,14 @@ public class WechatMiniProgramController {
     @Autowired
     private WechatMiniProgramService wechatMiniProgramService;
 
-    @PostMapping(value = "/getOpenid")
+    @GetMapping(value = "/getOpenid")
     @ApiOperation(value = "获取微信小程序openid")
-    public HttpResult getOpenid(@RequestBody WechatOpenidVO vo) {
-        if (BeanUtil.isEmpty(vo) || StringUtils.isBlank(vo.getCode())) {
+    public HttpResult getOpenid(@ApiParam(value = "小程序登录凭证code", required = true) @RequestParam String code) {
+        if (StringUtils.isBlank(code)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
 
-        WechatOpenidResultVO result = wechatMiniProgramService.getOpenid(vo.getCode());
+        WechatOpenidResultVO result = wechatMiniProgramService.getOpenid(code);
         if (!result.isSuccess()) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, result.getMessage());
         }

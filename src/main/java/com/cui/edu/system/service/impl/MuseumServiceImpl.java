@@ -1,6 +1,5 @@
 package com.cui.edu.system.service.impl;
 
-import cn.hutool.extra.pinyin.PinyinUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -32,9 +31,8 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
     @Override
     public boolean saveMuseum(Museum record) {
         if (record.getId() == null) {
-            String firstLetter = PinyinUtil.getFirstLetter(record.getName(), "").toUpperCase();
-            record.setFirstLetter(firstLetter);
-            if (existByFirstLetter(firstLetter)) {
+            // mid为银联商户号，同一个商户号不允许重复创建博物馆。
+            if (StringUtils.isNotBlank(record.getMid()) && existByMid(record.getMid())) {
                 return false;
             }
             if (record.getStatus() == null) {
@@ -45,6 +43,7 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
             super.saveOrUpdate(record);
             return true;
         } catch (DuplicateKeyException e) {
+            // 数据库唯一约束兜底，避免并发新增时绕过前置查询。
             return false;
         }
     }
@@ -74,9 +73,9 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
         super.updateBatchById(museumList);
     }
 
-    private boolean existByFirstLetter(String firstLetter) {
+    private boolean existByMid(String mid) {
         QueryWrapper<Museum> ew = new QueryWrapper<>();
-        ew.eq(Museum.FIRST_LETTER, firstLetter);
+        ew.eq(Museum.MID, mid);
         return super.count(ew) > 0;
     }
 }

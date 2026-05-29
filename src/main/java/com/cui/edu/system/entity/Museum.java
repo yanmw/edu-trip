@@ -71,10 +71,16 @@ public class Museum implements Serializable {
     private String name;
 
     /**
-     * 首字母缩写
+     * 银联商户号
      */
-    @ApiModelProperty(value = "首字母缩写")
-    private String firstLetter;
+    @ApiModelProperty(value = "银联商户号")
+    private String mid;
+
+    /**
+     * 银联终端号
+     */
+    @ApiModelProperty(value = "银联终端号")
+    private String tid;
 
     /**
      * 状态 1：启用；0：禁用
@@ -95,8 +101,9 @@ public class Museum implements Serializable {
 
     public static final String NAME = "name";
 
-    public static final String FIRST_LETTER = "first_letter";
-
     public static final String STATUS = "status";
 
+    public static final String MID = "mid";
+
+    public static final String TID = "tid";
 }

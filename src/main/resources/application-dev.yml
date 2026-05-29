@@ -29,3 +29,5 @@ edu:
   file:
     upload-path: /Users/ymw/file # 本地mac环境文件存储目录
     domain: https://liberal-tapir-measured.ngrok-free.app # 本地访问域名
+unionPay:
+  notifyUrl: https://liberal-tapir-measured.ngrok-free.app/zzg/rental/order/unionPayNotify # 银联回调

@@ -1,10 +1,15 @@
 package com.cui.edu.trip.entity;
 
 import java.math.BigDecimal;
+
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+
 import java.time.LocalDateTime;
 import java.io.Serializable;
+
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -20,7 +25,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@ApiModel(value="Order对象", description="订单表")
+@ApiModel(value = "Order对象", description = "订单表")
 public class Order implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -39,12 +44,12 @@ public class Order implements Serializable {
     private Integer orderType;
 
     @ApiModelProperty(value = "支付金额")
-    private BigDecimal payAmount;
+    private Integer payAmount;
 
     @ApiModelProperty(value = "订单数量")
     private Integer orderQuantity;
 
-    @ApiModelProperty(value = "订单状态")
+    @ApiModelProperty(value = "订单状态 1：支付中 10：支付成功；-1：放弃支付；-2：部分退款；-10：全额退款；-11：退款中")
     private Integer orderStatus;
 
     @ApiModelProperty(value = "银联单号")
@@ -54,7 +59,7 @@ public class Order implements Serializable {
     private Integer isUsed;
 
     @ApiModelProperty(value = "退款金额")
-    private BigDecimal refundAmount;
+    private Integer refundAmount;
 
     @ApiModelProperty(value = "退款数量")
     private Integer refundQuantity;
@@ -72,9 +77,11 @@ public class Order implements Serializable {
     private Integer isDeleted;
 
     @ApiModelProperty(value = "创建时间")
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
     @ApiModelProperty(value = "更新时间")
+    @TableField(fill = FieldFill.UPDATE)
     private LocalDateTime updateTime;
 
 
@@ -112,4 +119,25 @@ public class Order implements Serializable {
 
     public static final String UPDATE_TIME = "update_time";
 
+    /**
+     * 订单状态枚举
+     * 1：支付中；10：支付成功；-1：放弃支付；-2：部分退款；-10：全额退款；-11：退款中
+     */
+    public enum OrderStatusEnum {
+        PAYING(1),
+        SUCCESS(10),
+        ABANDON(-1),
+        PARTIAL_REFUND(-2),
+        ALL_REFUND(-10),
+        REFUNDING(-11);
+        private Integer value;
+
+        OrderStatusEnum(Integer value) {
+            this.value = value;
+        }
+
+        public Integer getValue() {
+            return value;
+        }
+    }
 }

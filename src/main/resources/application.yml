@@ -84,6 +84,8 @@ edu:
     mini-program:
       app-id: '' # 微信小程序appid
       secret: '' # 微信小程序secret
+  mid: '' # 银联商户号
+  tid: '' # 银联终端号
 ############## Sa-Token 配置 (文档: https://sa-token.cc) ##############
 sa-token:
   # token 名称（同时也是 cookie 名称）

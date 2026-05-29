@@ -80,6 +80,10 @@ mybatis-plus:
 edu:
   file:
     request-prefix: /files # 文件访问前缀，最终访问地址为 http://host:port/files/日期/文件名
+  wechat:
+    mini-program:
+      app-id: '' # 微信小程序appid
+      secret: '' # 微信小程序secret
 ############## Sa-Token 配置 (文档: https://sa-token.cc) ##############
 sa-token:
   # token 名称（同时也是 cookie 名称）

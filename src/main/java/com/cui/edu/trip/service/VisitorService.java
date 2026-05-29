@@ -4,6 +4,7 @@ import com.cui.edu.trip.entity.Visitor;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.vo.trip.VisitorVO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -21,6 +22,16 @@ public interface VisitorService extends IService<Visitor> {
      * 保存游客；保存前根据身份证补齐省份和性别。
      */
     void saveVisitor(Visitor record);
+
+    /**
+     * 导入游客Excel，并为导入数据统一设置团队ID。
+     */
+    int importExcel(MultipartFile file, Long teamId);
+
+    /**
+     * 生成游客导入模板。
+     */
+    byte[] getImportTemplate();
 
     /**
      * 分页查询未删除的游客。

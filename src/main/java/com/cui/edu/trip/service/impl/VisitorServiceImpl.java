@@ -1,8 +1,13 @@
 package com.cui.edu.trip.service.impl;
 
+import cn.hutool.poi.excel.ExcelReader;
+import cn.hutool.poi.excel.ExcelUtil;
+import cn.hutool.poi.excel.ExcelWriter;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.cui.edu.config.exception.MyException;
+import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
@@ -12,11 +17,18 @@ import com.cui.edu.trip.service.VisitorService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.vo.trip.VisitorVO;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * <p>
@@ -31,6 +43,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
 
     // 身份证号码前两位对应省级行政区。
     private static final Map<String, String> PROVINCE_MAP = new HashMap<>();
+
+    private static final List<String> IMPORT_TEMPLATE_HEADERS = Arrays.asList("姓名", "手机号", "身份证号");
+
+    private static final Set<String> IMPORT_REQUIRED_FIELDS = new HashSet<>(Arrays.asList("name", "mobile", "idCard"));
 
     static {
         PROVINCE_MAP.put("11", "北京市");
@@ -77,6 +93,43 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             record.setIsDeleted(SysConstants.IS_FALSE);
         }
         super.saveOrUpdate(record);
+    }
+
+    @Override
+    public int importExcel(MultipartFile file, Long teamId) {
+        if (file == null || file.isEmpty()) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "导入文件不能为空");
+        }
+
+        try (ExcelReader reader = ExcelUtil.getReader(file.getInputStream())) {
+            validateImportHeaders(reader.readRow(0));
+            addHeaderAlias(reader);
+            List<Visitor> visitorList = reader.readAll(Visitor.class);
+            if (visitorList == null || visitorList.isEmpty()) {
+                return 0;
+            }
+            for (Visitor visitor : visitorList) {
+                visitor.setId(null);
+                visitor.setTeamId(teamId);
+                visitor.setIsDeleted(SysConstants.IS_FALSE);
+                fillProvinceAndGender(visitor);
+            }
+            super.saveBatch(visitorList);
+            return visitorList.size();
+        } catch (IOException e) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel导入失败");
+        }
+    }
+
+    @Override
+    public byte[] getImportTemplate() {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try (ExcelWriter writer = ExcelUtil.getWriter(true)) {
+            writer.writeHeadRow(IMPORT_TEMPLATE_HEADERS);
+            writer.autoSizeColumnAll();
+            writer.flush(outputStream, true);
+        }
+        return outputStream.toByteArray();
     }
 
     @Override
@@ -143,5 +196,52 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (genderCode >= '0' && genderCode <= '9') {
             record.setGender((genderCode - '0') % 2 == 1 ? SysConstants.IS_TRUE : SysConstants.IS_FALSE);
         }
+    }
+
+    private void addHeaderAlias(ExcelReader reader) {
+        reader.addHeaderAlias("姓名", "name");
+        reader.addHeaderAlias("name", "name");
+        reader.addHeaderAlias("手机号", "mobile");
+        reader.addHeaderAlias("mobile", "mobile");
+        reader.addHeaderAlias("身份证号", "idCard");
+        reader.addHeaderAlias("身份证", "idCard");
+        reader.addHeaderAlias("idCard", "idCard");
+    }
+
+    private void validateImportHeaders(List<Object> headers) {
+        if (headers == null || headers.isEmpty()) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel表头不能为空");
+        }
+
+        int headerCount = 0;
+        Set<String> actualFields = new LinkedHashSet<>();
+        for (Object header : headers) {
+            if (header == null || StringUtils.isBlank(header.toString())) {
+                continue;
+            }
+            headerCount++;
+            String fieldName = convertHeaderToFieldName(header.toString().trim());
+            if (fieldName == null) {
+                throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel只能包含手机号、身份证号、姓名");
+            }
+            actualFields.add(fieldName);
+        }
+
+        if (headerCount != IMPORT_REQUIRED_FIELDS.size() || !IMPORT_REQUIRED_FIELDS.equals(actualFields)) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel必须且只能包含手机号、身份证号、姓名");
+        }
+    }
+
+    private String convertHeaderToFieldName(String header) {
+        if ("手机号".equals(header) || "mobile".equals(header)) {
+            return "mobile";
+        }
+        if ("身份证号".equals(header) || "身份证".equals(header) || "idCard".equals(header)) {
+            return "idCard";
+        }
+        if ("姓名".equals(header) || "name".equals(header)) {
+            return "name";
+        }
+        return null;
     }
 }

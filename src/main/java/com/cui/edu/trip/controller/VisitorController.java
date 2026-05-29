@@ -11,13 +11,23 @@ import com.cui.edu.trip.service.VisitorService;
 import com.cui.edu.vo.trip.VisitorVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -47,6 +57,28 @@ public class VisitorController {
         }
     }
 
+    @PostMapping(value = "/importExcel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ApiOperation(value = "Excel导入游客")
+    public HttpResult importExcel(@ApiParam(value = "Excel文件", required = true) @RequestParam("file") MultipartFile file,
+                                  @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId) {
+        if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+        int count = visitorService.importExcel(file, teamId);
+        return HttpResult.ok(count);
+    }
+
+    @GetMapping(value = "/downloadTemplate")
+    @ApiOperation(value = "下载游客导入模板")
+    public ResponseEntity<byte[]> downloadTemplate() {
+        byte[] data = visitorService.getImportTemplate();
+        String fileName = encodeFileName("游客导入模板.xlsx");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + fileName)
+                .body(data);
+    }
+
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除游客")
     public HttpResult delete(@RequestBody List<Long> records) {
@@ -66,6 +98,14 @@ public class VisitorController {
             return HttpResult.ok(pageResult);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+    }
+
+    private String encodeFileName(String fileName) {
+        try {
+            return URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20");
+        } catch (UnsupportedEncodingException e) {
+            return fileName;
         }
     }
 }

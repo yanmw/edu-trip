@@ -1,5 +1,6 @@
 package com.cui.edu.system.service.impl;
 
+import cn.hutool.extra.pinyin.PinyinUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -11,6 +12,7 @@ import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.mapper.MuseumMapper;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.vo.system.MuseumVO;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,6 +28,26 @@ import java.util.List;
  */
 @Service
 public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> implements MuseumService {
+
+    @Override
+    public boolean saveMuseum(Museum record) {
+        if (record.getId() == null) {
+            String firstLetter = PinyinUtil.getFirstLetter(record.getName(), "").toUpperCase();
+            record.setFirstLetter(firstLetter);
+            if (existByFirstLetter(firstLetter)) {
+                return false;
+            }
+            if (record.getStatus() == null) {
+                record.setStatus(SysConstants.IS_TRUE);
+            }
+        }
+        try {
+            super.saveOrUpdate(record);
+            return true;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
+    }
 
     @Override
     public PageResult findPage(MuseumVO vo) {
@@ -50,5 +72,11 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
             museumList.add(museum);
         }
         super.updateBatchById(museumList);
+    }
+
+    private boolean existByFirstLetter(String firstLetter) {
+        QueryWrapper<Museum> ew = new QueryWrapper<>();
+        ew.eq(Museum.FIRST_LETTER, firstLetter);
+        return super.count(ew) > 0;
     }
 }

@@ -18,6 +18,11 @@ import java.util.List;
 public interface MuseumService extends IService<Museum> {
 
     /**
+     * 保存博物馆；新增时首字母缩写重复则返回false。
+     */
+    boolean saveMuseum(Museum record);
+
+    /**
      * 博物馆分页查询
      *
      * @param vo 查询参数

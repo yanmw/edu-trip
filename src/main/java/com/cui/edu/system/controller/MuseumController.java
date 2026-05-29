@@ -4,6 +4,7 @@ package com.cui.edu.system.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
@@ -38,10 +39,13 @@ public class MuseumController {
     @ApiOperation(value = "新增/修改博物馆")
     public HttpResult save(@RequestBody Museum record) {
         if (BeanUtil.isNotEmpty(record)) {
-            if (record.getId() == null && record.getStatus() == null) {
-                record.setStatus(SysConstants.IS_TRUE);
+            if (record.getId() == null && StringUtils.isBlank(record.getName())) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
             }
-            museumService.saveOrUpdate(record);
+            boolean saved = museumService.saveMuseum(record);
+            if (!saved) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "首字母缩写已存在");
+            }
             return HttpResult.ok(record.getId());
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");

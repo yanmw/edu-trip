@@ -145,6 +145,22 @@
             <artifactId>okhttp</artifactId>
             <version>4.10.0</version>
         </dependency>
+        <!-- Apache HttpClient：银联支付接口请求 -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+        </dependency>
+        <!-- Commons Codec：银联签名 SHA256 摘要 -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+        </dependency>
+        <!-- EasyExcel：银联 Excel 数据导入导出注解 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>easyexcel</artifactId>
+            <version>3.3.4</version>
+        </dependency>
         <!-- hutool工具包：包含了大量工具包，详情可查看：https://doc.hutool.cn/pages/index/ -->
         <dependency>
             <groupId>cn.hutool</groupId>

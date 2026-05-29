@@ -19,6 +19,9 @@ swagger:
 # 定时任务开关
 scheduled:
   enable: true
+# 订单流水前缀
+code:
+  prefix: 11TW
 
 edu:
   file:

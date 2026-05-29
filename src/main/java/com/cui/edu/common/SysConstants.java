@@ -33,5 +33,9 @@ public interface SysConstants {
 	 */
 	String SET_NX = "setNx:";
 
+	/**
+	 * 编号分隔符
+	 */
+	String HF_PREFIX = "-";
 
 }

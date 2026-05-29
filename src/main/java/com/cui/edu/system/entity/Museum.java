@@ -71,6 +71,12 @@ public class Museum implements Serializable {
     private String name;
 
     /**
+     * 首字母缩写
+     */
+    @ApiModelProperty(value = "首字母缩写")
+    private String firstLetter;
+
+    /**
      * 状态 1：启用；0：禁用
      */
     @ApiModelProperty(value = "状态 1：启用；0：禁用")
@@ -88,6 +94,8 @@ public class Museum implements Serializable {
     public static final String UPDATE_TIME = "update_time";
 
     public static final String NAME = "name";
+
+    public static final String FIRST_LETTER = "first_letter";
 
     public static final String STATUS = "status";
 

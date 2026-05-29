@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 public class UserVO extends BasisVO {
 
-    private String deptId;
+    private String museumId;
 
     private String username;
 

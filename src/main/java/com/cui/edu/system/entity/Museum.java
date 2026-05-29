@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -11,11 +12,10 @@ import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * <p>
- * 用户表
+ * 
  * </p>
  *
  * @author Cuicui
@@ -23,8 +23,9 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@ApiModel(value = "用户信息")
-public class SysUser implements Serializable {
+@TableName("Museum")
+@ApiModel(value = "博物馆信息")
+public class Museum implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -64,53 +65,16 @@ public class SysUser implements Serializable {
     private LocalDateTime updateTime;
 
     /**
-     * 用户名
+     * 博物馆名称
      */
-    @ApiModelProperty(value = "用户名")
-    private String username;
+    @ApiModelProperty(value = "博物馆名称")
+    private String name;
 
     /**
-     * 密码
+     * 状态 1：启用；0：禁用
      */
-    @ApiModelProperty(value = "密码")
-    private String password;
-
-    /**
-     * 加密盐
-     */
-    @ApiModelProperty(value = "加密盐")
-    private String salt;
-
-    /**
-     * 手机号
-     */
-    @ApiModelProperty(value = "手机号")
-    private String phone;
-
-    /**
-     * 微信openId
-     */
-    @ApiModelProperty(value = "微信openId")
-    private String wxOpenId;
-
-    /**
-     * 博物馆id
-     */
-    @ApiModelProperty(value = "博物馆id")
-    private String museumId;
-
-    /**
-     * 状态  0：禁用   1：启用
-     */
-    @ApiModelProperty(value = "状态  0：禁用   1：启用")
+    @ApiModelProperty(value = "状态 1：启用；0：禁用")
     private Integer status;
-
-    /**
-     * 角色id列表
-     */
-    @ApiModelProperty(value = "角色id列表")
-    @TableField(exist = false)
-    private List<Long> roleIds;
 
 
     public static final String ID = "id";
@@ -123,17 +87,7 @@ public class SysUser implements Serializable {
 
     public static final String UPDATE_TIME = "update_time";
 
-    public static final String USERNAME = "username";
-
-    public static final String PASSWORD = "password";
-
-    public static final String SALT = "salt";
-
-    public static final String PHONE = "phone";
-
-    public static final String WX_OPEN_ID = "wx_open_id";
-
-    public static final String MUSEUM_ID = "museum_id";
+    public static final String NAME = "name";
 
     public static final String STATUS = "status";
 

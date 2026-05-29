@@ -10,6 +10,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.system.entity.SysMenu;
 import com.cui.edu.system.service.SysMenuService;
 import com.cui.edu.system.service.SysRoleMenuService;
+import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/system/sys-menu")
+@Api(tags = "菜单管理")
 public class SysMenuController {
     @Autowired
     private SysMenuService menuService;

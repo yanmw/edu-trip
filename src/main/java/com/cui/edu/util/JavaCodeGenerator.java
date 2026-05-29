@@ -44,7 +44,7 @@ public class JavaCodeGenerator {
         // 全局配置
         GlobalConfig gc = new GlobalConfig();
         String projectPath = System.getProperty("user.dir");
-        gc.setOutputDir(projectPath + "/platform/src/main/java");
+        gc.setOutputDir(projectPath + "/src/main/java");
         gc.setAuthor("Cuicui");
         gc.setOpen(false);
         // 实体属性 Swagger2 注解
@@ -56,7 +56,7 @@ public class JavaCodeGenerator {
         // 数据源配置
         DataSourceConfig dsc = new DataSourceConfig();
         //* 配置数据库
-        dsc.setUrl("jdbc:mysql://localhost:3306/systek_platform?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai");
+        dsc.setUrl("jdbc:mysql://localhost:3306/edu_trip?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai");
         dsc.setDriverName("com.mysql.cj.jdbc.Driver");
         //* 配置数据库账号密码
         dsc.setUsername("root");
@@ -67,7 +67,7 @@ public class JavaCodeGenerator {
         PackageConfig pc = new PackageConfig();
         pc.setModuleName(scanner("模块名"));
         //* 配置包名
-        pc.setParent("com.cui.platform");
+        pc.setParent("com.cui.edu");
         mpg.setPackageInfo(pc);
 
         // 自定义配置
@@ -88,7 +88,7 @@ public class JavaCodeGenerator {
             @Override
             public String outputFile(TableInfo tableInfo) {
                 // 自定义输出文件名 ， 如果你 Entity 设置了前后缀、此处注意 xml 的名称会跟着发生变化！！
-                return projectPath + "/platform/src/main/resources/mapper/" + pc.getModuleName()
+                return projectPath + "/src/main/resources/mapper/" + pc.getModuleName()
                         + "/" + tableInfo.getEntityName() + "Mapper" + StringPool.DOT_XML;
             }
         });

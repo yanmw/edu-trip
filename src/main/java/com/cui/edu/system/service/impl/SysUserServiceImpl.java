@@ -87,7 +87,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         Page<SysUser> page = new Page<>(vo.getPageNum(), vo.getPageSize());
         QueryWrapper<SysUser> queryWrapper = new QueryWrapper<>();
         queryWrapper.like(ObjectUtil.isNotEmpty(vo.getUsername()), SysUser.USERNAME, vo.getUsername());
-        queryWrapper.eq(ObjectUtil.isNotEmpty(vo.getDeptId()), SysUser.DEPT_ID, vo.getDeptId());
+        queryWrapper.eq(ObjectUtil.isNotEmpty(vo.getMuseumId()), SysUser.MUSEUM_ID, vo.getMuseumId());
         super.page(page, queryWrapper);
         List<SysUser> users = page.getRecords();
         for (SysUser user : users) {

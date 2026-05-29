@@ -26,7 +26,10 @@ public class MyMetaObjectHandleConfig implements MetaObjectHandler {
     @Override
     public void updateFill(MetaObject metaObject) {
         log.info("进入修改");
-        this.setFieldValByName("updateTime", DateTimeUtils.getLocalDateTime(), metaObject);
+        Object updateTime = getFieldValByName("updateTime", metaObject);
+        if (updateTime == null) {
+            this.setFieldValByName("updateTime", DateTimeUtils.getLocalDateTime(), metaObject);
+        }
     }
 
 }

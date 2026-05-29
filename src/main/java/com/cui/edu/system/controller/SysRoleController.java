@@ -14,6 +14,7 @@ import com.cui.edu.system.service.SysRoleService;
 import com.cui.edu.system.service.SysUserRoleService;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.vo.system.RoleVO;
+import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/system/sys-role")
+@Api(tags = "角色管理")
 public class SysRoleController {
 
     @Autowired

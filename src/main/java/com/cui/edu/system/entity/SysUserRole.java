@@ -60,6 +60,13 @@ public class SysUserRole implements Serializable {
     @ApiModelProperty(value = "角色ID")
     private Long roleId;
 
+    /**
+     * 角色名称
+     */
+    @ApiModelProperty(value = "角色名称")
+    @TableField(exist = false)
+    private String roleName;
+
 
     public static final String ID = "id";
 

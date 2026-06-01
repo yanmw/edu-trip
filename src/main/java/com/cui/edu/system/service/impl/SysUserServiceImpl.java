@@ -10,9 +10,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
+import com.cui.edu.system.entity.SysRole;
 import com.cui.edu.system.entity.SysUser;
 import com.cui.edu.system.entity.SysUserRole;
 import com.cui.edu.system.mapper.SysUserMapper;
+import com.cui.edu.system.service.SysRoleService;
 import com.cui.edu.system.service.SysUserRoleService;
 import com.cui.edu.system.service.SysUserService;
 import com.cui.edu.vo.system.UserVO;
@@ -20,8 +22,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -36,6 +39,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     @Autowired
     private SysUserRoleService userRoleService;
+
+    @Autowired
+    private SysRoleService roleService;
 
     @Override
     public SysUser findByUsername(String username) {
@@ -102,6 +108,15 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         QueryWrapper<SysUserRole> entityWrapper = new QueryWrapper<>();
         entityWrapper.eq(SysUserRole.USER_ID, id);
         List<SysUserRole> list = userRoleService.list(entityWrapper);
+        if (ObjectUtil.isEmpty(list)) {
+            return list;
+        }
+        List<Long> roleIds = list.stream().map(SysUserRole::getRoleId).collect(Collectors.toList());
+        Map<Long, String> roleNameMap = roleService.listByIds(roleIds).stream()
+                .collect(Collectors.toMap(SysRole::getId, SysRole::getName));
+        for (SysUserRole userRole : list) {
+            userRole.setRoleName(roleNameMap.get(userRole.getRoleId()));
+        }
         return list;
     }
 

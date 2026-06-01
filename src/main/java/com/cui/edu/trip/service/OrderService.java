@@ -1,8 +1,11 @@
 package com.cui.edu.trip.service;
 
+import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.Order;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.cui.edu.vo.trip.AppointmentVO;
+import com.cui.edu.vo.trip.OrderVO;
+import com.cui.edu.vo.trip.VerificationVO;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.Map;
@@ -62,4 +65,22 @@ public interface OrderService extends IService<Order> {
     void unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString);
 
     void handlePayingOrderExpired(String orderNo) throws Exception;
+
+    Map refund(Long orderDetailId, String refundReason) throws Exception;
+
+    Map refundAll(String orderId, String refundReason) throws Exception;
+
+    Map refundQuery(Long id) throws Exception;
+
+    void abandonPayingOrder(Order order);
+
+    Map verification(VerificationVO vo);
+
+    /**
+     * 根据游客微信 openId 或团队 ID 分页查询订单列表，并附带子订单信息。
+     *
+     * @param vo 订单分页查询参数
+     * @return 分页订单列表，每条订单的 detailList 字段包含子订单集合
+     */
+    PageResult findPage(OrderVO vo);
 }

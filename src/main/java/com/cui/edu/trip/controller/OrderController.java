@@ -2,19 +2,24 @@ package com.cui.edu.trip.controller;
 
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.json.JSONObject;
 import com.alibaba.fastjson2.JSON;
 import com.cui.edu.common.HttpResult;
+import com.cui.edu.common.HttpStatus;
+import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.service.OrderService;
+import com.cui.edu.util.AvoidRepeatRequest;
 import com.cui.edu.vo.trip.AppointmentVO;
+import com.cui.edu.vo.trip.OrderVO;
+import com.cui.edu.vo.trip.VerificationVO;
 import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.Map;
@@ -48,6 +53,91 @@ public class OrderController {
         } else {
             return HttpResult.errorBadRequest();
         }
+    }
+
+    @GetMapping(value = "/refund")
+    @ApiOperation(value = "管理员退款")
+    @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
+    public HttpResult refund(@ApiParam(value = "子订单号") @RequestParam Long orderDetailId,
+                             @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
+        Map result = orderService.refund(orderDetailId, refundReason);
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
+        } else {
+            return HttpResult.ok();
+        }
+    }
+
+    @GetMapping(value = "/refundAll")
+    @ApiOperation(value = "管理员退全款")
+    @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
+    public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderId,
+                                @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
+        Map result = orderService.refundAll(orderId, refundReason);
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
+        } else {
+            return HttpResult.ok();
+        }
+    }
+
+    @GetMapping(value = "/refundQuery/{id}")
+    @ApiOperation(value = "退款查询", response = String.class)
+    public HttpResult refundQuery(@ApiParam(value = "子订单id") @PathVariable Long id) throws Exception {
+        if (ObjectUtil.isNotEmpty(id)) {
+            Map map = orderService.refundQuery(id);
+            if (map.containsKey(SysConstants.MSG)) {
+                return HttpResult.ok(map.get(SysConstants.MSG).toString());
+            }
+            return HttpResult.error(HttpStatus.SC_MY_ERROR, "未查询到结果");
+        } else {
+            return HttpResult.errorBadRequest();
+        }
+    }
+
+    @GetMapping(value = "/abandon")
+    @ApiOperation(value = "放弃支付")
+    public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderId) throws Exception {
+        Order order = orderService.getById(orderId);
+        orderService.abandonPayingOrder(order);
+        return HttpResult.ok();
+    }
+
+    @PostMapping(value = "/verification")
+    @ApiOperation(value = "核销", response = JSONObject.class)
+    public HttpResult verification(@RequestBody VerificationVO vo) {
+        if (BeanUtil.isNotEmpty(vo)) {
+            Map map = orderService.verification(vo);
+            if (map.containsKey(SysConstants.MSG)) {
+                return HttpResult.ok(map.get(SysConstants.MSG).toString());
+            } else {
+                return HttpResult.ok();
+            }
+        } else {
+            return HttpResult.errorBadRequest();
+        }
+    }
+
+    /**
+     * 根据游客微信 openId 或团队 ID 分页查询订单列表。
+     *
+     * <p>openId 用于查询游客个人订单，teamId 用于查询团队订单；两个参数至少传一个。
+     * 返回的每条主订单都会带 detailList 子订单集合。</p>
+     */
+    @PostMapping(value = "/findPage")
+    @ApiOperation(value = "根据游客openId或团队ID分页查询订单列表")
+    public HttpResult findPage(@RequestBody OrderVO vo) {
+        if (ObjectUtil.isEmpty(vo)) {
+            return HttpResult.errorBadRequest();
+        }
+        if (ObjectUtil.isEmpty(vo.getOpenId()) && ObjectUtil.isEmpty(vo.getTeamId())) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "游客openId和团队ID至少填写一个");
+        }
+        if (vo.getPageNum() <= 0 || vo.getPageSize() <= 0) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "分页参数必须大于0");
+        }
+        PageResult pageResult = orderService.findPage(vo);
+        return HttpResult.ok(pageResult);
     }
 
     /**

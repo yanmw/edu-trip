@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 
 import java.time.LocalDateTime;
 import java.io.Serializable;
+import java.util.List;
 
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
@@ -83,6 +84,10 @@ public class Order implements Serializable {
     @ApiModelProperty(value = "更新时间")
     @TableField(fill = FieldFill.UPDATE)
     private LocalDateTime updateTime;
+
+    @ApiModelProperty(value = "子订单列表")
+    @TableField(exist = false)
+    private List<OrderDetail> detailList;
 
 
     public static final String ID = "id";

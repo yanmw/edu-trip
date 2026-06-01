@@ -41,5 +41,14 @@ public interface SysConstants {
 	 * 银联-退款
 	 */
 	String TRADE_REFUND = "TRADE_REFUND";
-
+	/**
+	 * errCode：
+	 * 退款失败-头寸不足
+	 */
+	String POSITION_LACK = "POSITION_LACK";
+	/**
+	 * errCode：
+	 * 操作成功
+	 */
+	String SUCCESS = "SUCCESS";
 }

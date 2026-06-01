@@ -250,6 +250,86 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
+     * 前端支付完成后主动确认订单支付结果。
+     *
+     * <p>该方法只做“确认支付成功”的补偿：银联查询确认成功时复用支付回调逻辑更新本地订单；
+     * 查询为空、未成功或状态延迟时只把结果返回给前端，不在这里放弃支付订单。</p>
+     *
+     * @param orderNo 系统订单号
+     * @return 支付确认结果
+     * @throws Exception 银联支付查询接口异常
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map confirmPayResult(String orderNo) throws Exception {
+        Order order = getRequiredOrderForPayQuery(orderNo);
+
+        if (Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
+            return buildPayQueryResult(order, true, SysConstants.TRADE_SUCCESS, "支付成功");
+        }
+        if (isRefundOrderStatus(order.getOrderStatus())) {
+            return buildPayQueryResult(order, true, null, "订单已进入退款流程");
+        }
+        if (!Order.OrderStatusEnum.PAYING.getValue().equals(order.getOrderStatus())) {
+            return buildPayQueryResult(order, false, null, "订单当前状态不允许确认支付");
+        }
+
+        Museum museum = getRequiredUnionPayMuseum(order);
+        JSONObject queryResult = unionPayService.appletQuery(orderNo, museum.getMid(), museum.getTid());
+        if (ObjectUtil.isEmpty(queryResult)) {
+            return buildPayQueryResult(order, false, null, "暂未查询到银联支付结果，请稍后重试");
+        }
+
+        String unionPayStatus = queryResult.getString("status");
+        if (isUnionPayTradeSuccess(queryResult)) {
+            String tradeNo = queryResult.getString("targetOrderId");
+            // 银联主动查询确认支付成功时，直接复用支付回调逻辑，弥补银联回调未送达的情况。
+            unionPayNotify(orderNo, tradeNo, JSON.toJSONString(queryResult));
+            Order latestOrder = getOrderByOrderNo(orderNo);
+            return buildPayQueryResult(latestOrder, true, unionPayStatus, "支付成功");
+        }
+        if (isUnionPayWaitBuyerPay(queryResult)) {
+            return buildPayQueryResult(order, false, unionPayStatus, "银联订单等待支付，请完成支付后再确认");
+        }
+
+        return buildPayQueryResult(order, false, unionPayStatus, "银联暂未确认支付成功，请稍后重试");
+    }
+
+    /**
+     * 查询主动支付确认对应的本地订单。
+     *
+     * @param orderNo 系统订单号
+     * @return 本地订单
+     */
+    private Order getRequiredOrderForPayQuery(String orderNo) {
+        Order order = getOrderByOrderNo(orderNo);
+        if (ObjectUtil.isEmpty(order)) {
+            throw new MyException(HttpStatus.SC_MY_ERROR, "订单不存在，订单号：" + orderNo);
+        }
+        return order;
+    }
+
+    /**
+     * 组装主动支付确认返回值。
+     *
+     * @param order          本地订单
+     * @param paySuccess     是否已确认支付成功
+     * @param unionPayStatus 银联查询状态
+     * @param msg            前端提示
+     * @return 支付确认结果
+     */
+    private Map buildPayQueryResult(Order order, boolean paySuccess, String unionPayStatus, String msg) {
+        Map result = new HashMap(6);
+        result.put("paySuccess", paySuccess);
+        result.put(Order.ORDER_NO, order.getOrderNo());
+        result.put(Order.ORDER_STATUS, order.getOrderStatus());
+        result.put(Order.UNIONPAY_ORDER_NO, order.getUnionpayOrderNo());
+        result.put("unionPayStatus", unionPayStatus);
+        result.put(SysConstants.MSG, msg);
+        return result;
+    }
+
+    /**
      * 支付成功回调落库逻辑。
      *
      * <p>本方法是支付成功状态变更的唯一入口，银联主动回调和 Redis 超时补偿确认支付成功后都走这里。
@@ -546,6 +626,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return;
         }
 
+        if (isUnionPayWaitBuyerPay(queryResult)) {
+            log.info("订单过期处理：银联订单仍等待支付，订单号：{}", orderNo);
+            abandonPayingOrder(order);
+            return;
+        }
+
         log.info("订单过期处理：银联订单未支付成功，订单号：{}，银联状态：{}", orderNo, queryResult.getString("status"));
         abandonPayingOrder(order);
     }
@@ -592,6 +678,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      */
     private boolean isUnionPayTradeSuccess(JSONObject queryResult) {
         return SysConstants.TRADE_SUCCESS.equals(queryResult.getString("status"));
+    }
+
+    /**
+     * 判断银联订单查询结果是否仍在等待买家支付。
+     *
+     * @param queryResult 银联查询返回
+     * @return true 表示银联订单仍待支付
+     */
+    private boolean isUnionPayWaitBuyerPay(JSONObject queryResult) {
+        return SysConstants.WAIT_BUYER_PAY.equals(queryResult.getString("status"));
     }
 
     /**

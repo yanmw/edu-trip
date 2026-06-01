@@ -38,6 +38,10 @@ public interface SysConstants {
 	 */
 	String TRADE_SUCCESS = "TRADE_SUCCESS";
 	/**
+	 * 银联-等待买家支付
+	 */
+	String WAIT_BUYER_PAY = "WAIT_BUYER_PAY";
+	/**
 	 * 银联-退款
 	 */
 	String TRADE_REFUND = "TRADE_REFUND";

@@ -23,6 +23,18 @@ public interface OrderService extends IService<Order> {
     Map add(AppointmentVO vo, HttpServletRequest request) throws Exception;
 
     /**
+     * 前端支付完成后，主动向银联查询并确认支付结果。
+     *
+     * <p>银联确认支付成功时会复用支付回调逻辑更新本地订单；未确认成功时只返回查询结果，
+     * 不主动放弃订单，避免银联状态短暂延迟导致误处理。</p>
+     *
+     * @param orderNo 系统订单号
+     * @return 支付确认结果
+     * @throws Exception 银联查询接口异常
+     */
+    Map confirmPayResult(String orderNo) throws Exception;
+
+    /**
      * 处理银联支付成功回调。
      *
      * <p>该方法只负责支付成功后的本地订单状态变更，可由银联真实回调调用，

@@ -13,6 +13,7 @@ import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.service.OrderService;
 import com.cui.edu.util.AvoidRepeatRequest;
 import com.cui.edu.vo.trip.AppointmentVO;
+import com.cui.edu.vo.trip.OrderPayQueryVO;
 import com.cui.edu.vo.trip.OrderVO;
 import com.cui.edu.vo.trip.VerificationVO;
 import io.swagger.annotations.ApiOperation;
@@ -53,6 +54,22 @@ public class OrderController {
         } else {
             return HttpResult.errorBadRequest();
         }
+    }
+
+    /**
+     * 前端支付完成后主动确认支付结果。
+     *
+     * <p>前端微信支付成功回调只能说明用户端完成了支付流程，后端仍以银联查询结果为准。
+     * 如果银联查询确认支付成功，则复用支付回调逻辑推进本地订单状态。</p>
+     */
+    @PostMapping(value = "/pay/query")
+    @ApiOperation(value = "主动查询并确认订单支付结果")
+    public HttpResult payQuery(@RequestBody OrderPayQueryVO vo) throws Exception {
+        if (ObjectUtil.isEmpty(vo) || ObjectUtil.isEmpty(vo.getOrderNo())) {
+            return HttpResult.errorBadRequest();
+        }
+        Map result = orderService.confirmPayResult(vo.getOrderNo());
+        return HttpResult.ok(result);
     }
 
     @GetMapping(value = "/refund")

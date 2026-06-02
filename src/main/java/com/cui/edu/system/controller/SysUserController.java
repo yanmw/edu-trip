@@ -60,6 +60,7 @@ public class SysUserController {
         }
         // 登录
         StpUtil.login(loginVO.getUsername(), loginVO.getLoginType());
+        StpUtil.getSession().set("userId", user.getId());
         // 获取 Token  相关参数
         SaTokenInfo tokenInfo = StpUtil.getTokenInfo();
         tokenInfo.setTag(user.getId().toString());

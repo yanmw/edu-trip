@@ -181,6 +181,7 @@ public class GlobalExceptionHandlerConfig {
     }
 
     private void exceptionIntoTable(Exception e, int httpStatusCode, String exceptionType) {
+        log.error("系统异常，类型：{}，状态码：{}，消息：{}", exceptionType, httpStatusCode, e.getMessage(), e);
         SysException exception = new SysException();
         exception.setHttpStatusCode(httpStatusCode);
         exception.setExceptionType(exceptionType);
@@ -194,6 +195,10 @@ public class GlobalExceptionHandlerConfig {
             sb.append(element.getLineNumber()).append("\n");
         }
         exception.setExceptionDetail(sb.toString());
-        exceptionService.save(exception);
+        try {
+            exceptionService.save(exception);
+        } catch (Exception saveException) {
+            log.error("系统异常信息保存失败，类型：{}，状态码：{}", exceptionType, httpStatusCode, saveException);
+        }
     }
 }

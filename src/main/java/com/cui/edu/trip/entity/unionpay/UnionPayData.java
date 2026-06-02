@@ -1,5 +1,8 @@
 package com.cui.edu.trip.entity.unionpay;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import com.alibaba.excel.annotation.ExcelProperty;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -46,10 +49,14 @@ public class UnionPayData implements Serializable {
 
     @ApiModelProperty(value = "结算日期")
     @ExcelProperty("结算日期")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate settlementDate;
 
     @ApiModelProperty(value = "交易时间")
     @ExcelProperty("交易时间")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime transactionTime;
 
     @ApiModelProperty(value = "卡号")

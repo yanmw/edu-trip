@@ -64,7 +64,7 @@
 
     <!--logger用来配置绑定某个包或者类下的日志输出等级，以及使用哪一个appender来输出日志-->
     <!--additivity配置是否向上级logger传递打印信息行为，该logger的上级为root，默认true-->
-    <logger name="com.cui.platform" level="DEBUG" additivity="false">
+    <logger name="com.cui.edu" level="DEBUG" additivity="false">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE_INFO"/>
     </logger>

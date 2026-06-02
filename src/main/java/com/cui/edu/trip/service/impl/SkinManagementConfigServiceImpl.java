@@ -1,19 +1,26 @@
 package com.cui.edu.trip.service.impl;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.cui.edu.trip.entity.SkinManagementConfig;
-import com.cui.edu.trip.mapper.SkinManagementConfigMapper;
-import com.cui.edu.trip.service.SkinManagementConfigService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.system.entity.Museum;
+import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.trip.entity.SkinManagementConfig;
+import com.cui.edu.trip.mapper.SkinManagementConfigMapper;
+import com.cui.edu.trip.service.SkinManagementConfigService;
 import com.cui.edu.vo.trip.SkinManagementConfigVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -25,6 +32,9 @@ import java.util.List;
  */
 @Service
 public class SkinManagementConfigServiceImpl extends ServiceImpl<SkinManagementConfigMapper, SkinManagementConfig> implements SkinManagementConfigService {
+
+    @Autowired
+    private MuseumService museumService;
 
     @Override
     public PageResult findPage(SkinManagementConfigVO vo) {
@@ -39,6 +49,21 @@ public class SkinManagementConfigServiceImpl extends ServiceImpl<SkinManagementC
         ew.eq(SkinManagementConfig.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(SkinManagementConfig.ID);
         page = super.page(page, ew);
+        List<SkinManagementConfig> records = page.getRecords();
+        Map<Long, String> museumNameMap = records.stream()
+                .map(SkinManagementConfig::getMuseumId)
+                .filter(ObjectUtil::isNotEmpty)
+                .distinct()
+                .collect(Collectors.collectingAndThen(Collectors.toList(), museumIds -> {
+                    if (ObjectUtil.isEmpty(museumIds)) {
+                        return new HashMap<>();
+                    }
+                    return museumService.listByIds(museumIds).stream()
+                            .collect(Collectors.toMap(Museum::getId, Museum::getName));
+                }));
+        for (SkinManagementConfig record : records) {
+            record.setMuseumName(museumNameMap.get(record.getMuseumId()));
+        }
         return PageResultUtil.getPageResult(page);
     }
 

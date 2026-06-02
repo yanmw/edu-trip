@@ -14,4 +14,7 @@ public class ActivityTypeVO extends BasisVO {
 
     @ApiModelProperty(value = "状态：1启用 0禁用")
     private Integer status;
+
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
 }

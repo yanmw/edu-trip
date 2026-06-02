@@ -41,16 +41,24 @@ public class ActivityTypeServiceImpl extends ServiceImpl<ActivityTypeMapper, Act
     public PageResult findPage(ActivityTypeVO vo) {
         Page<ActivityType> page = new Page<>(vo.getPageNum(), vo.getPageSize());
         QueryWrapper<ActivityType> ew = new QueryWrapper<>();
+        // 按活动类型名称模糊查询
         if (StringUtils.isNotBlank(vo.getTypeName())) {
             ew.like(ActivityType.TYPE_NAME, vo.getTypeName());
         }
+        // 按启用/禁用状态查询
         if (vo.getStatus() != null) {
             ew.eq(ActivityType.STATUS, vo.getStatus());
         }
+        // 按博物馆ID查询
+        if (vo.getMuseumId() != null) {
+            ew.eq(ActivityType.MUSEUM_ID, vo.getMuseumId());
+        }
+        // 只查询未删除的活动类型
         ew.eq(ActivityType.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityType.ID);
         page = super.page(page, ew);
         List<ActivityType> activityTypes = page.getRecords();
+        // 去向博物馆表查询名称
         Map<Long, String> museumNameMap = activityTypes.stream()
                 .map(ActivityType::getMuseumId)
                 .filter(ObjectUtil::isNotEmpty)

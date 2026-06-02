@@ -1,15 +1,21 @@
 package com.cui.edu.trip.entity;
 
+
+
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import java.time.LocalDate;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalTime;
 import java.time.LocalDateTime;
 import java.io.Serializable;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import org.springframework.format.annotation.DateTimeFormat;
 
 /**
  * <p>
@@ -34,27 +40,44 @@ public class ActivitySchedule implements Serializable {
     private Long activityId;
 
     @ApiModelProperty(value = "活动日期")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate activityDate;
 
     @ApiModelProperty(value = "开始时间")
+    @JsonFormat(pattern = "HH:mm:ss")
+    @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime startTime;
 
     @ApiModelProperty(value = "结束时间")
+    @JsonFormat(pattern = "HH:mm:ss")
+    @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime endTime;
+
+    @ApiModelProperty(value = "场次人数")
+    private Integer scheduleNumber;
 
     @ApiModelProperty(value = "备注")
     private String remark;
 
     @ApiModelProperty(value = "创建时间")
+    @TableField(fill = FieldFill.INSERT)
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 
     @ApiModelProperty(value = "创建人")
+    @TableField(fill = FieldFill.INSERT)
     private Long createBy;
 
     @ApiModelProperty(value = "更新时间")
+    @TableField(fill = FieldFill.UPDATE)
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
 
     @ApiModelProperty(value = "更新人")
+    @TableField(fill = FieldFill.UPDATE)
     private Long updateBy;
 
 
@@ -67,6 +90,8 @@ public class ActivitySchedule implements Serializable {
     public static final String START_TIME = "start_time";
 
     public static final String END_TIME = "end_time";
+
+    public static final String SCHEDULE_NUMBER = "schedule_number";
 
     public static final String REMARK = "remark";
 

@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -76,7 +77,10 @@ public class SysUserController {
         if (BeanUtil.isEmpty(user)) {
             return HttpResult.errorBadRequest();
         }
-        sysUserService.saveUser(user);
+        Map map = sysUserService.saveUser(user);
+        if (map.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(map.get(SysConstants.MSG).toString());
+        }
         return HttpResult.ok();
     }
 

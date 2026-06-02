@@ -100,6 +100,13 @@ public class SysUser implements Serializable {
     private String museumId;
 
     /**
+     * 博物馆名称
+     */
+    @ApiModelProperty(value = "博物馆名称")
+    @TableField(exist = false)
+    private String museumName;
+
+    /**
      * 状态  0：禁用   1：启用
      */
     @ApiModelProperty(value = "状态  0：禁用   1：启用")

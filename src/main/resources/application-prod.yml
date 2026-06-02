@@ -28,4 +28,4 @@ edu:
     upload-path: /www/file # 线上linux环境文件存储目录
     domain: https://www.systekcn.com # 线上访问域名
 unionPay:
-  notifyUrl: https://www.systekcn.com/selfService/zzg/rental/order/unionPayNotify # 银联回调
+  notifyUrl: https://www.systekcn.com/trip/order/unionPayNotify # 银联回调

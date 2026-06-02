@@ -3,18 +3,25 @@ package com.cui.edu.trip.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.cui.edu.trip.entity.ActivityType;
-import com.cui.edu.trip.mapper.ActivityTypeMapper;
-import com.cui.edu.trip.service.ActivityTypeService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.system.entity.Museum;
+import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.trip.entity.ActivityType;
+import com.cui.edu.trip.mapper.ActivityTypeMapper;
+import com.cui.edu.trip.service.ActivityTypeService;
 import com.cui.edu.vo.trip.ActivityTypeVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -26,6 +33,9 @@ import java.util.List;
  */
 @Service
 public class ActivityTypeServiceImpl extends ServiceImpl<ActivityTypeMapper, ActivityType> implements ActivityTypeService {
+
+    @Autowired
+    private MuseumService museumService;
 
     @Override
     public PageResult findPage(ActivityTypeVO vo) {
@@ -40,6 +50,21 @@ public class ActivityTypeServiceImpl extends ServiceImpl<ActivityTypeMapper, Act
         ew.eq(ActivityType.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityType.ID);
         page = super.page(page, ew);
+        List<ActivityType> activityTypes = page.getRecords();
+        Map<Long, String> museumNameMap = activityTypes.stream()
+                .map(ActivityType::getMuseumId)
+                .filter(ObjectUtil::isNotEmpty)
+                .distinct()
+                .collect(Collectors.collectingAndThen(Collectors.toList(), museumIds -> {
+                    if (ObjectUtil.isEmpty(museumIds)) {
+                        return new HashMap<>();
+                    }
+                    return museumService.listByIds(museumIds).stream()
+                            .collect(Collectors.toMap(Museum::getId, Museum::getName));
+                }));
+        for (ActivityType activityType : activityTypes) {
+            activityType.setMuseumName(museumNameMap.get(activityType.getMuseumId()));
+        }
         return PageResultUtil.getPageResult(page);
     }
 

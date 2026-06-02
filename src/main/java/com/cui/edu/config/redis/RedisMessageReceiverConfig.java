@@ -4,6 +4,7 @@ package com.cui.edu.config.redis;
 import com.alibaba.fastjson2.JSONObject;
 
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.trip.entity.OrderLog;
 import com.cui.edu.trip.service.OrderService;
 import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.util.RedisUtils;
@@ -15,8 +16,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author Cuicui
@@ -25,8 +24,6 @@ import java.util.concurrent.locks.ReentrantLock;
 @Component
 @Slf4j
 public class RedisMessageReceiverConfig {
-
-    Lock l = new ReentrantLock();
 
     @Autowired
     private RedisUtils redisUtils;
@@ -48,16 +45,14 @@ public class RedisMessageReceiverConfig {
      **/
     public void receiveMessageUnionRefundQuery(Object message) {
         log.info("receiveMessageUnionRefundQuery接收到的消息：" + message);
-        Boolean b = redisUtils.setIfAbsent(SysConstants.SET_NX + "UnionRefund", String.valueOf(System.currentTimeMillis()), 3);
-        if (b) {
-            scheduledExecutorService.schedule(() -> {
-                try {
-                    unionRefundQuery(message);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }, 600, TimeUnit.SECONDS);
-        }
+        // 退款申请成功后延迟10分钟查询银联，给银联异步退款处理留出时间。
+        scheduledExecutorService.schedule(() -> {
+            try {
+                unionRefundQuery(message);
+            } catch (Exception e) {
+                log.error("银联退款查询补偿处理失败，消息：{}", message, e);
+            }
+        }, 600, TimeUnit.SECONDS);
     }
 
     public void unionRefundQuery(Object message) throws Exception {
@@ -72,18 +67,62 @@ public class RedisMessageReceiverConfig {
         String mid = jsonObject.getString("mid");
         String tid = jsonObject.getString("tid");
         Integer money = jsonObject.getInteger("money");
+        // 主动查询银联退款状态；查询结果无论是否修改订单，都会写入订单日志。
         JSONObject result = unionPayService.appletRefundQuery(refundOrderId, mid, tid);
-        if (result != null && SysConstants.SUCCESS.equals(result.getString("errCode"))) {
+        orderService.recordUnionRefundQueryLog(orderNo, refundOrderId, money, result,
+                OrderLog.SOURCE_REDIS_REFUND_QUERY, "Redis退款补偿查询银联退款状态");
+        if (result == null) {
+            log.warn("银联退款查询无结果，退款单号：{}", refundOrderId);
+            // 银联无响应时重新投递消息，等待下一轮延迟查询。
+            redisUtils.convertAndSend("mq_union_refund_query", jsonObject);
+            return;
+        }
+        if (!SysConstants.SUCCESS.equals(result.getString("errCode"))) {
+            log.warn("银联退款查询失败，退款单号：{}，查询结果：{}", refundOrderId, result);
+            return;
+        }
+
+        String refundStatus = result.getString("refundStatus");
+        if (SysConstants.REFUND_SUCCESS.equals(refundStatus)) {
+            // 银联确认退款成功时，复用退款回调逻辑更新本地主子订单状态。
             // 银联订单号
             String tradeNo = result.getString("targetOrderId");
-            // 银联交易流水号
-            String flowNo = result.getString("seqId");
-            // 退款订单号
+            // 退款订单号和金额以银联查询结果为准；若银联未返回，则使用原补偿消息中的值兜底。
             String refundOrderNo = result.getString("refundOrderId");
-            // 报文响应时间
-            String refundTime = result.getString("responseTimestamp");
-            orderService.unionRefundNotify(orderNo, tradeNo, money, refundOrderNo, refundTime, result.toString());
+            if (refundOrderNo == null || refundOrderNo.length() == 0) {
+                refundOrderNo = refundOrderId;
+            }
+            Integer refundAmount = result.getInteger("refundAmount");
+            if (refundAmount == null) {
+                refundAmount = result.getInteger("totalAmount");
+            }
+            if (refundAmount == null) {
+                refundAmount = money;
+            }
+            // 退款完成时间优先取银联退款支付时间，缺失时再用响应时间。
+            String refundTime = result.getString("refundPayTime");
+            if (refundTime == null || refundTime.length() == 0) {
+                refundTime = result.getString("responseTimestamp");
+            }
+            orderService.unionRefundNotify(orderNo, tradeNo, refundAmount, refundOrderNo, refundTime, result.toString());
+            return;
         }
+
+        if (SysConstants.REFUND_PROCESSING.equals(refundStatus) || SysConstants.UNKNOWN.equals(refundStatus)) {
+            log.info("银联退款仍在处理中，稍后继续查询，退款单号：{}，状态：{}", refundOrderId, refundStatus);
+            // 处理中或未知状态继续投递队列，避免退款回调丢失造成订单长期停在退款中。
+            redisUtils.convertAndSend("mq_union_refund_query", jsonObject);
+            return;
+        }
+
+        if (SysConstants.REFUND_FAIL.equals(refundStatus)) {
+            log.warn("银联退款失败，开始回退本地退款中状态，退款单号：{}，查询结果：{}", refundOrderId, result);
+            // 银联明确退款失败时，回退本地退款中状态，恢复可再次申请退款的支付成功状态。
+            orderService.handleRefundQueryFailed(orderNo, refundOrderId);
+            return;
+        }
+
+        log.warn("银联退款查询返回未知退款状态，退款单号：{}，查询结果：{}", refundOrderId, result);
     }
 
 

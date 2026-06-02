@@ -42,9 +42,33 @@ public interface SysConstants {
 	 */
 	String WAIT_BUYER_PAY = "WAIT_BUYER_PAY";
 	/**
+	 * 银联-交易关闭
+	 */
+	String TRADE_CLOSED = "TRADE_CLOSED";
+	/**
+	 * 银联-新订单
+	 */
+	String NEW_ORDER = "NEW_ORDER";
+	/**
+	 * 银联-不明确的交易状态
+	 */
+	String UNKNOWN = "UNKNOWN";
+	/**
 	 * 银联-退款
 	 */
 	String TRADE_REFUND = "TRADE_REFUND";
+	/**
+	 * 银联-退款成功
+	 */
+	String REFUND_SUCCESS = "SUCCESS";
+	/**
+	 * 银联-退款失败
+	 */
+	String REFUND_FAIL = "FAIL";
+	/**
+	 * 银联-退款处理中
+	 */
+	String REFUND_PROCESSING = "PROCESSING";
 	/**
 	 * errCode：
 	 * 退款失败-头寸不足

@@ -10,10 +10,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
+import com.cui.edu.common.SysConstants;
+import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.entity.SysRole;
 import com.cui.edu.system.entity.SysUser;
 import com.cui.edu.system.entity.SysUserRole;
 import com.cui.edu.system.mapper.SysUserMapper;
+import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.system.service.SysRoleService;
 import com.cui.edu.system.service.SysUserRoleService;
 import com.cui.edu.system.service.SysUserService;
@@ -22,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -43,6 +47,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     @Autowired
     private SysRoleService roleService;
 
+    @Autowired
+    private MuseumService museumService;
+
     @Override
     public SysUser findByUsername(String username) {
         QueryWrapper<SysUser> queryWrapper = new QueryWrapper<>();
@@ -51,7 +58,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     @Override
-    public void saveUser(SysUser user) {
+    public Map saveUser(SysUser user) {
+        Map result = new HashMap<>();
         SysUser sysUser = findByUsername(user.getUsername());
         if (BeanUtil.isNotEmpty(sysUser)) {
             // 用户存在
@@ -65,6 +73,10 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             setPwd(user);
             super.save(user);
         }
+        if (ObjectUtil.isEmpty(user.getRoleIds())) {
+            result.put(SysConstants.MSG, "角色不能为空");
+            return result;
+        }
         // 更新用户角色
         QueryWrapper<SysUserRole> ew = new QueryWrapper<>();
         ew.eq(SysUserRole.USER_ID, user.getId());
@@ -77,6 +89,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             userRoles.add(sysUserRole);
         }
         userRoleService.saveBatch(userRoles);
+        return result;
     }
 
     @Override
@@ -96,9 +109,21 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         queryWrapper.eq(ObjectUtil.isNotEmpty(vo.getMuseumId()), SysUser.MUSEUM_ID, vo.getMuseumId());
         super.page(page, queryWrapper);
         List<SysUser> users = page.getRecords();
+        Map<String, String> museumNameMap = users.stream()
+                .map(SysUser::getMuseumId)
+                .filter(ObjectUtil::isNotEmpty)
+                .distinct()
+                .collect(Collectors.collectingAndThen(Collectors.toList(), museumIds -> {
+                    if (ObjectUtil.isEmpty(museumIds)) {
+                        return new HashMap<>();
+                    }
+                    return museumService.listByIds(museumIds).stream()
+                            .collect(Collectors.toMap(museum -> museum.getId().toString(), Museum::getName));
+                }));
         for (SysUser user : users) {
             List<Long> roleIds = userRoleService.findRolesByUserId(user.getId());
             user.setRoleIds(roleIds);
+            user.setMuseumName(museumNameMap.get(user.getMuseumId()));
         }
         return PageResultUtil.getPageResult(page);
     }

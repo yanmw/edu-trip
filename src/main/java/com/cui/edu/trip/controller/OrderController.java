@@ -11,11 +11,13 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.service.OrderService;
+import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.util.AvoidRepeatRequest;
 import com.cui.edu.vo.trip.AppointmentVO;
 import com.cui.edu.vo.trip.OrderPayQueryVO;
 import com.cui.edu.vo.trip.OrderVO;
 import com.cui.edu.vo.trip.VerificationVO;
+import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
@@ -36,10 +38,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/trip/order")
 @Slf4j
+@Api(tags = "订单管理")
 public class OrderController {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private UnionPayService unionPayService;
 
     @PostMapping(value = "/add")
     @ApiOperation(value = "添加订单")
@@ -88,9 +94,14 @@ public class OrderController {
     @GetMapping(value = "/refundAll")
     @ApiOperation(value = "管理员退全款")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
-    public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderId,
+    public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam(value = "orderNo", required = false) String orderNo,
+                                @ApiParam(value = "兼容旧参数：主订单号") @RequestParam(value = "orderId", required = false) String orderId,
                                 @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
-        Map result = orderService.refundAll(orderId, refundReason);
+        String orderNoParam = ObjectUtil.isNotEmpty(orderNo) ? orderNo : orderId;
+        if (ObjectUtil.isEmpty(orderNoParam)) {
+            return HttpResult.errorBadRequest();
+        }
+        Map result = orderService.refundAll(orderNoParam, refundReason);
         if (result.containsKey(SysConstants.MSG)) {
             return HttpResult.error(result.get(SysConstants.MSG).toString());
         } else {
@@ -114,9 +125,16 @@ public class OrderController {
 
     @GetMapping(value = "/abandon")
     @ApiOperation(value = "放弃支付")
-    public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderId) throws Exception {
-        Order order = orderService.getById(orderId);
-        orderService.abandonPayingOrder(order);
+    public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam(value = "orderNo", required = false) String orderNo,
+                              @ApiParam(value = "兼容旧参数：订单号") @RequestParam(value = "orderId", required = false) String orderId) throws Exception {
+        String orderNoParam = ObjectUtil.isNotEmpty(orderNo) ? orderNo : orderId;
+        if (ObjectUtil.isEmpty(orderNoParam)) {
+            return HttpResult.errorBadRequest();
+        }
+        Map result = orderService.abandonPayingOrder(orderNoParam);
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
+        }
         return HttpResult.ok();
     }
 
@@ -150,7 +168,7 @@ public class OrderController {
         if (ObjectUtil.isEmpty(vo.getOpenId()) && ObjectUtil.isEmpty(vo.getTeamId())) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "游客openId和团队ID至少填写一个");
         }
-        if (vo.getPageNum() <= 0 || vo.getPageSize() <= 0) {
+        if (ObjectUtil.isEmpty(vo.getPageNum()) || ObjectUtil.isEmpty(vo.getPageSize()) || vo.getPageNum() <= 0 || vo.getPageSize() <= 0) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "分页参数必须大于0");
         }
         PageResult pageResult = orderService.findPage(vo);
@@ -174,37 +192,42 @@ public class OrderController {
      */
     @PostMapping(value = "/unionPayNotify")
     @ApiOperation(value = "银联支付/退款回调")
-    public HttpResult unionPayNotify(HttpServletRequest request) {
-        Map map = request.getParameterMap();
-        if (request.getParameter("status").equals(SysConstants.TRADE_SUCCESS)) {
-            // 支付回调
-            String requestString = JSON.toJSONString(map);
-            log.info("银联支付回调内容：" + requestString);
-            // 我们的订单号
-            String orderNo = request.getParameter("merOrderId");
-            // 银联订单号
-            String tradeNo = request.getParameter("targetOrderId");
-            orderService.unionPayNotify(orderNo, tradeNo, requestString);
-            return HttpResult.ok();
-        } else if (request.getParameter("status").equals(SysConstants.TRADE_REFUND)) {
-            // 退款回调
-            String requestString = JSON.toJSONString(map);
-            log.info("银联退款回调内容：" + requestString);
-            // 我们的订单号
-            String orderNo = request.getParameter("merOrderId");
-            // 银联订单号
-            String tradeNo = request.getParameter("targetOrderId");
-            // 当前退款金额
-            Integer money = Integer.valueOf(request.getParameter("refundAmount"));
-            // 退款订单号
-            String refundOrderId = request.getParameter("refundOrderId");
-            // 退款时间
-            String refundTime = request.getParameter("refundPayTime");
-            orderService.unionRefundNotify(orderNo, tradeNo, money, refundOrderId, refundTime, requestString);
-            return HttpResult.ok();
-        } else {
-            return HttpResult.ok();
+    public String unionPayNotify(HttpServletRequest request) {
+        Map<String, String[]> map = request.getParameterMap();
+        String requestString = JSON.toJSONString(map);
+        try {
+            if (!unionPayService.verifyNotifySign(map)) {
+                log.warn("银联回调验签失败，回调内容：{}", requestString);
+                return "FAILED";
+            }
+
+            String status = request.getParameter("status");
+            if (SysConstants.TRADE_SUCCESS.equals(status)) {
+                log.info("银联支付回调内容：{}", requestString);
+                orderService.unionPayNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
+                        getIntegerParameter(request, "totalAmount"), request.getParameter("mid"), request.getParameter("tid"), requestString);
+                return "SUCCESS";
+            } else if (SysConstants.TRADE_REFUND.equals(status)) {
+                log.info("银联退款回调内容：{}", requestString);
+                orderService.unionRefundNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
+                        getIntegerParameter(request, "refundAmount"), request.getParameter("refundOrderId"), request.getParameter("refundPayTime"), requestString);
+                return "SUCCESS";
+            }
+
+            log.info("银联回调状态无需处理，status={}，回调内容：{}", status, requestString);
+            return "SUCCESS";
+        } catch (Exception e) {
+            log.error("银联回调处理失败，回调内容：{}", requestString, e);
+            return "FAILED";
         }
+    }
+
+    private Integer getIntegerParameter(HttpServletRequest request, String name) {
+        String value = request.getParameter(name);
+        if (ObjectUtil.isEmpty(value)) {
+            return null;
+        }
+        return Integer.valueOf(value);
     }
 
 }

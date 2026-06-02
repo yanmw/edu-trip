@@ -1,6 +1,7 @@
 package com.cui.edu.trip.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalDateTime;
 import java.io.Serializable;
@@ -49,6 +50,13 @@ public class ActivityType implements Serializable {
     @ApiModelProperty(value = "是否删除")
     private Integer isDeleted;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
+    @ApiModelProperty(value = "博物馆名称")
+    @TableField(exist = false)
+    private String museumName;
+
 
     public static final String ID = "id";
 
@@ -65,5 +73,7 @@ public class ActivityType implements Serializable {
     public static final String STATUS = "status";
 
     public static final String IS_DELETED = "is_deleted";
+
+    public static final String MUSEUM_ID = "museum_id";
 
 }

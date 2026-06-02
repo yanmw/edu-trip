@@ -1,19 +1,17 @@
 package com.cui.edu.trip.service.impl;
 
-
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.cui.edu.common.SysConstants;
+import com.cui.edu.trip.entity.unionpay.AppletCloseBody;
+import com.cui.edu.trip.entity.unionpay.AppletPayBody;
 import com.cui.edu.trip.entity.unionpay.AppletQueryBody;
 import com.cui.edu.trip.entity.unionpay.AppletRefundBody;
 import com.cui.edu.trip.entity.unionpay.AppletRefundQueryBody;
-import com.cui.edu.trip.entity.unionpay.AppletPayBody;
 import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.util.DateTimeUtils;
 import com.cui.edu.util.TextCodeGenerator;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
@@ -24,13 +22,18 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 import javax.annotation.PreDestroy;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
+import java.util.StringJoiner;
+import java.util.TreeMap;
 
 @Service
 @Slf4j
@@ -39,27 +42,45 @@ public class UnionPayServiceImpl implements UnionPayService {
     @Autowired
     private TextCodeGenerator textCodeGenerator;
 
-    /**
-     * 微信小程序：银联支付的AppletAppId、AppletAppKey
-     */
-    private static final String AppletAppId = "8a81c1bf76674cf6017922771025035a";
-    private static final String AppletAppKey = "c92bf75e2a434baaab5ea39ee1800b74";
+    @Value("${unionPay.appletAppId}")
+    private String appletAppId;
 
-    /**
-     * 微信小程序：支付、支付查询、退款、退款查询的接口地址
-     */
-    private static final String AppletPayUrl = "https://api-mop.chinaums.com/v1/netpay/wx/unified-order";
-    private static final String AppletQueryUrl = "https://api-mop.chinaums.com/v1/netpay/query";
-    private static final String AppletRefundUrl = "https://api-mop.chinaums.com/v1/netpay/refund";
-    private static final String AppletRefundQueryUrl = "https://api-mop.chinaums.com/v1/netpay/refund-query";
+    @Value("${unionPay.appletAppKey}")
+    private String appletAppKey;
+
+    @Value("${unionPay.notifySignKey:}")
+    private String notifySignKey;
 
     @Value("${unionPay.notifyUrl}")
     private String notifyUrl;
 
-    /**
-     * 支付宝小程序：支付接口地址
-     */
-    private static final String aliPayAppletPayUrl = "https://api-mop.chinaums.com/v1/netpay/trade/create";
+    @Value("${unionPay.appletPayUrl:https://api-mop.chinaums.com/v1/netpay/wx/unified-order}")
+    private String appletPayUrl;
+
+    @Value("${unionPay.appletQueryUrl:https://api-mop.chinaums.com/v1/netpay/query}")
+    private String appletQueryUrl;
+
+    @Value("${unionPay.appletCloseUrl:https://api-mop.chinaums.com/v1/netpay/close}")
+    private String appletCloseUrl;
+
+    @Value("${unionPay.appletRefundUrl:https://api-mop.chinaums.com/v1/netpay/refund}")
+    private String appletRefundUrl;
+
+    @Value("${unionPay.appletRefundQueryUrl:https://api-mop.chinaums.com/v1/netpay/refund-query}")
+    private String appletRefundQueryUrl;
+
+    @Value("${unionPay.aliPayAppletPayUrl:https://api-mop.chinaums.com/v1/netpay/trade/create}")
+    private String aliPayAppletPayUrl;
+
+    @Value("${unionPay.tokenUrl:https://api-mop.chinaums.com/v1/token/access}")
+    private String tokenUrl;
+
+    @Value("${unionPay.accessTokenExpireSeconds:300}")
+    private long accessTokenExpireSeconds;
+
+    private volatile String cachedAuthorization;
+
+    private volatile long cachedAuthorizationExpireAt;
 
     // === 连接池配置 ===
     private static final int MAX_TOTAL_CONNECTIONS = 200;        // 最大总连接数
@@ -68,34 +89,25 @@ public class UnionPayServiceImpl implements UnionPayService {
     private static final int CONNECTION_REQUEST_TIMEOUT = 3000;  // 从连接池获取连接超时
     private static final int SOCKET_TIMEOUT = 10000;             // 数据传输超时
 
-    // === HttpClient 实例（全局复用） ===
     private static final PoolingHttpClientConnectionManager connManager;
-    // 单例HTTP客户端（复用连接池）
+
     private static final CloseableHttpClient HTTP_CLIENT;
 
     static {
-        // 1. 初始化连接池
         connManager = new PoolingHttpClientConnectionManager();
         connManager.setMaxTotal(MAX_TOTAL_CONNECTIONS);
         connManager.setDefaultMaxPerRoute(MAX_PER_ROUTE);
 
-        // 可选：针对特定域名设置连接上限
-        // HttpHost apiHost = new HttpHost("api-mop.chinaums.com", 443, "https");
-        // connManager.setMaxPerRoute(new HttpRoute(apiHost), 100);
-
-        // 2. 请求超时配置
         RequestConfig defaultConfig = RequestConfig.custom()
                 .setConnectTimeout(CONNECT_TIMEOUT)
                 .setConnectionRequestTimeout(CONNECTION_REQUEST_TIMEOUT)
                 .setSocketTimeout(SOCKET_TIMEOUT)
                 .build();
-        // 3. 构建HttpClient
         HTTP_CLIENT = HttpClients.custom()
                 .setConnectionManager(connManager)
                 .setDefaultRequestConfig(defaultConfig)
                 .build();
     }
-
 
     /**
      * @param orderId       订单号
@@ -104,7 +116,7 @@ public class UnionPayServiceImpl implements UnionPayService {
      * @param mid           商户号
      * @param tid           终端号
      * @param refundOrderId 退款订单号
-     * @return
+     * @return 银联退款响应
      */
     @Override
     public JSONObject appletRefund(String orderId, String targetOrderId, Integer money, String mid, String tid, String refundOrderId) throws Exception {
@@ -113,29 +125,21 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setMerOrderId(orderId);
         body.setTargetOrderId(targetOrderId);
         body.setRefundAmount(money);
-        // 退款必须使用原订单所属博物馆的银联商户号和终端号。
         body.setMid(mid);
         body.setTid(tid);
         body.setRefundOrderId(refundOrderId);
         String bodyStr = JSON.toJSONString(body);
-        log.info("小程序退款请求报文json：" + bodyStr);
-        String authorization = getToken();
-        try {
-            String send = send(AppletRefundUrl, bodyStr, authorization);
-            log.info("小程序退款返回报文json：" + send);
-            JSONObject jsonObject = JSONObject.parseObject(send);
-            return jsonObject;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+        log.info("小程序退款请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(appletRefundUrl, bodyStr, "小程序退款");
+        logUnionPayBusinessError("小程序退款", jsonObject);
+        return jsonObject;
     }
 
     /**
      * @param refundOrderId 退款订单号
      * @param mid           商户号
      * @param tid           终端号
-     * @return
+     * @return 银联退款查询响应
      */
     @Override
     public JSONObject appletRefundQuery(String refundOrderId, String mid, String tid) throws Exception {
@@ -145,24 +149,17 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setMid(mid);
         body.setTid(tid);
         String bodyStr = JSON.toJSONString(body);
-        log.info("小程序退款查询请求报文json：" + bodyStr);
-        String authorization = getToken();
-        try {
-            String send = send(AppletRefundQueryUrl, bodyStr, authorization);
-            log.info("小程序退款查询返回报文json：" + send);
-            JSONObject jsonObject = JSONObject.parseObject(send);
-            return jsonObject;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+        log.info("小程序退款查询请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(appletRefundQueryUrl, bodyStr, "小程序退款查询");
+        logUnionPayBusinessError("小程序退款查询", jsonObject);
+        return jsonObject;
     }
 
     /**
      * @param orderId 订单号
      * @param mid     商户号
      * @param tid     终端号
-     * @return
+     * @return 银联支付查询响应
      */
     @Override
     public JSONObject appletQuery(String orderId, String mid, String tid) throws Exception {
@@ -172,17 +169,30 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setMid(mid);
         body.setTid(tid);
         String bodyStr = JSON.toJSONString(body);
-        log.info("小程序支付查询请求报文json：" + bodyStr);
-        String authorization = getToken();
-        try {
-            String send = send(AppletQueryUrl, bodyStr, authorization);
-            log.info("小程序支付查询返回报文json：" + send);
-            JSONObject jsonObject = JSONObject.parseObject(send);
-            return jsonObject;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+        log.info("小程序支付查询请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(appletQueryUrl, bodyStr, "小程序支付查询");
+        logUnionPayBusinessError("小程序支付查询", jsonObject);
+        return jsonObject;
+    }
+
+    /**
+     * @param orderId 订单号
+     * @param mid     商户号
+     * @param tid     终端号
+     * @return 银联关单响应
+     */
+    @Override
+    public JSONObject appletClose(String orderId, String mid, String tid) throws Exception {
+        AppletCloseBody body = new AppletCloseBody();
+        body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
+        body.setMerOrderId(orderId);
+        body.setMid(mid);
+        body.setTid(tid);
+        String bodyStr = JSON.toJSONString(body);
+        log.info("小程序订单关闭请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(appletCloseUrl, bodyStr, "小程序订单关闭");
+        logUnionPayBusinessError("小程序订单关闭", jsonObject);
+        return jsonObject;
     }
 
     /**
@@ -191,8 +201,9 @@ public class UnionPayServiceImpl implements UnionPayService {
      * @param mid        商户号
      * @param tid        终端号
      * @param subOpenId  微信用户openId
-     * @param srcReserve 银联备用字段-我们用来当备注使用
-     * @return
+     * @param srcReserve 银联备用字段
+     * @param subAppId   微信小程序appId
+     * @return 微信小程序支付参数
      */
     @Override
     public String wechatAppletPay(String orderId, Integer money, String mid, String tid, String subOpenId, String srcReserve, String subAppId) throws Exception {
@@ -207,19 +218,14 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setSrcReserve(srcReserve);
         body.setNotifyUrl(notifyUrl);
         String bodyStr = JSON.toJSONString(body);
-        //请求报文
-        log.info("小程序支付请求报文json：" + bodyStr);
-        String authorization = getToken();
-        try {
-            String send = send(AppletPayUrl, bodyStr, authorization);
-            log.info("小程序支付返回报文json：" + send);
-            JSONObject jsonObject = JSONObject.parseObject(send);
-            JSONObject miniPayRequest = jsonObject.getJSONObject("miniPayRequest");
-            return miniPayRequest.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
+        log.info("小程序支付请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(appletPayUrl, bodyStr, "小程序支付");
+        ensureUnionPaySuccess("小程序支付", jsonObject);
+        JSONObject miniPayRequest = jsonObject.getJSONObject("miniPayRequest");
+        if (miniPayRequest == null || miniPayRequest.isEmpty()) {
+            throw new RuntimeException("银联小程序支付下单失败，miniPayRequest为空");
         }
-        return null;
+        return miniPayRequest.toString();
     }
 
     /**
@@ -228,8 +234,8 @@ public class UnionPayServiceImpl implements UnionPayService {
      * @param mid        商户号
      * @param tid        终端号
      * @param userId     支付宝userId
-     * @param srcReserve 银联备用字段-我们用来当备注使用
-     * @return
+     * @param srcReserve 银联备用字段
+     * @return 支付宝小程序支付订单号
      */
     @Override
     public String aliPayAppletPay(String orderId, Integer money, String mid, String tid, String userId, String srcReserve) throws Exception {
@@ -243,31 +249,57 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setSrcReserve(srcReserve);
         body.setNotifyUrl(notifyUrl);
         String bodyStr = JSON.toJSONString(body);
-        //请求报文
-        log.info("小程序支付请求报文json：" + bodyStr);
-        String authorization = getToken();
-        try {
-            String send = send(aliPayAppletPayUrl, bodyStr, authorization);
-            log.info("小程序支付返回报文json：" + send);
-            JSONObject jsonObject = JSONObject.parseObject(send);
-            String targetOrderId = jsonObject.getString("targetOrderId");
-            return targetOrderId;
-        } catch (Exception e) {
-            e.printStackTrace();
+        log.info("支付宝小程序支付请求报文json：{}", bodyStr);
+        JSONObject jsonObject = postUnionPay(aliPayAppletPayUrl, bodyStr, "支付宝小程序支付");
+        ensureUnionPaySuccess("支付宝小程序支付", jsonObject);
+        String targetOrderId = jsonObject.getString("targetOrderId");
+        if (targetOrderId == null || targetOrderId.trim().isEmpty()) {
+            throw new RuntimeException("银联支付宝小程序支付下单失败，targetOrderId为空");
         }
-        return null;
+        return targetOrderId;
     }
 
+    /**
+     * 校验银联支付/退款异步通知签名。
+     *
+     * <p>文档要求除 sign 外的表单字段按 ASCII 字典序拼接，并在末尾追加通讯密钥后计算签名。
+     * signType 为空时银联默认使用 MD5；传 SHA256 时按 SHA256 计算。</p>
+     *
+     * @param parameterMap 回调表单参数
+     * @return true 表示验签通过
+     */
+    @Override
+    public boolean verifyNotifySign(Map<String, String[]> parameterMap) {
+        String sign = getFirstValue(parameterMap, "sign");
+        if (sign == null || sign.trim().isEmpty()) {
+            log.warn("银联回调验签失败：sign为空");
+            return false;
+        }
 
+        String waitSign = buildNotifyWaitSign(parameterMap) + getNotifySignKey();
+        String signType = getFirstValue(parameterMap, "signType");
+        String calculatedSign;
+        if ("SHA256".equalsIgnoreCase(signType)) {
+            calculatedSign = DigestUtils.sha256Hex(waitSign.getBytes(StandardCharsets.UTF_8));
+        } else {
+            calculatedSign = DigestUtils.md5Hex(waitSign.getBytes(StandardCharsets.UTF_8));
+        }
 
+        boolean passed = sign.equalsIgnoreCase(calculatedSign);
+        if (!passed) {
+            log.warn("银联回调验签失败：signType={}，waitSign={}", signType, buildNotifyWaitSign(parameterMap));
+        }
+        return passed;
+    }
 
+    private JSONObject postUnionPay(String url, String entity, String operationName) throws Exception {
+        String send = send(url, entity, getToken());
+        log.info("{}返回报文json：{}", operationName, send);
+        return JSONObject.parseObject(send);
+    }
 
     /**
-     * 发送请求
-     *
-     * @param
-     * @return
-     * @throws Exception
+     * 发送银联接口请求。
      */
     public String send(String url, String entity, String authorization) throws Exception {
         HttpPost post = new HttpPost(url);
@@ -275,33 +307,48 @@ public class UnionPayServiceImpl implements UnionPayService {
         post.setEntity(new StringEntity(entity, "application/json", "UTF-8"));
 
         try (CloseableHttpResponse response = HTTP_CLIENT.execute(post)) {
-            return EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            int statusCode = response.getStatusLine().getStatusCode();
+            HttpEntity responseEntity = response.getEntity();
+            String responseText = responseEntity == null ? "" : EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
+            if (statusCode < 200 || statusCode >= 300) {
+                log.error("银联HTTP请求失败，url={}，statusCode={}，response={}", url, statusCode, responseText);
+                throw new RuntimeException("银联HTTP请求失败：" + statusCode);
+            }
+            return responseText;
         }
     }
 
     public String getToken() {
-        JSONObject jsonObject = new JSONObject();
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss");
-        String timestamp = format.format(new Date());
-        String nonce = textCodeGenerator.generate();
-        String all = AppletAppId + timestamp + nonce + AppletAppKey;
-        String signature = DigestUtils.sha256Hex(getMessageBytes(all));
-        jsonObject.put("appId", AppletAppId);
-        jsonObject.put("timestamp", timestamp);
-        jsonObject.put("nonce", nonce);
-        jsonObject.put("signature", signature);
-        jsonObject.put("signMethod", "SHA256");
-        log.info("getToken" + jsonObject.toString());
-        JSONObject response = doPost("https://api-mop.chinaums.com/v1/token/access", jsonObject);
-        String accessToken = response.get("accessToken").toString();
-        return "OPEN-ACCESS-TOKEN AccessToken=" + accessToken + "";
-    }
-
-    public byte[] getMessageBytes(String message) {
-        try {
-            return message.getBytes("UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException("签名过程中出现错误");
+        long now = System.currentTimeMillis();
+        if (cachedAuthorization != null && now < cachedAuthorizationExpireAt) {
+            return cachedAuthorization;
+        }
+        synchronized (this) {
+            now = System.currentTimeMillis();
+            if (cachedAuthorization != null && now < cachedAuthorizationExpireAt) {
+                return cachedAuthorization;
+            }
+            JSONObject jsonObject = new JSONObject();
+            SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss");
+            String timestamp = format.format(new Date());
+            String nonce = textCodeGenerator.generate();
+            String all = appletAppId + timestamp + nonce + appletAppKey;
+            String signature = DigestUtils.sha256Hex(all.getBytes(StandardCharsets.UTF_8));
+            jsonObject.put("appId", appletAppId);
+            jsonObject.put("timestamp", timestamp);
+            jsonObject.put("nonce", nonce);
+            jsonObject.put("signature", signature);
+            jsonObject.put("signMethod", "SHA256");
+            log.info("获取银联AccessToken请求：appId={}，timestamp={}，nonce={}", appletAppId, timestamp, nonce);
+            JSONObject response = doPost(tokenUrl, jsonObject);
+            String accessToken = response.getString("accessToken");
+            if (accessToken == null || accessToken.trim().isEmpty()) {
+                throw new RuntimeException("获取银联AccessToken失败：" + response);
+            }
+            cachedAuthorization = "OPEN-ACCESS-TOKEN AccessToken=" + accessToken;
+            // 文档未在本段说明token有效期，保守短缓存，避免每笔交易都请求token。
+            cachedAuthorizationExpireAt = now + Math.max(60, accessTokenExpireSeconds) * 1000;
+            return cachedAuthorization;
         }
     }
 
@@ -309,24 +356,20 @@ public class UnionPayServiceImpl implements UnionPayService {
         HttpPost post = new HttpPost(url);
 
         try {
-            // 设置JSON请求体
             StringEntity entity = new StringEntity(json.toString(), StandardCharsets.UTF_8);
             entity.setContentType("application/json");
             post.setEntity(entity);
 
-            // 执行请求并处理响应
             try (CloseableHttpResponse response = HTTP_CLIENT.execute(post)) {
                 int statusCode = response.getStatusLine().getStatusCode();
                 HttpEntity responseEntity = response.getEntity();
+                String result = responseEntity == null ? "" : EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
 
                 if (statusCode >= 200 && statusCode < 300) {
-                    String result = EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
                     return JSONObject.parseObject(result);
-                } else {
-                    String errorResponse = EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
-                    log.error("HTTP请求失败: {} - {}", statusCode, errorResponse);
-                    throw new RuntimeException("HTTP请求失败: " + statusCode + " - " + errorResponse);
                 }
+                log.error("HTTP请求失败: {} - {}", statusCode, result);
+                throw new RuntimeException("HTTP请求失败: " + statusCode + " - " + result);
             }
         } catch (IOException e) {
             log.error("HTTP请求IO异常: {}", e.getMessage(), e);
@@ -337,6 +380,68 @@ public class UnionPayServiceImpl implements UnionPayService {
         }
     }
 
+    private void ensureUnionPaySuccess(String operationName, JSONObject jsonObject) {
+        if (jsonObject == null) {
+            throw new RuntimeException(operationName + "失败，银联响应为空");
+        }
+        if (!SysConstants.SUCCESS.equals(jsonObject.getString("errCode"))) {
+            throw new RuntimeException(operationName + "失败，" + buildUnionPayErrorMessage(jsonObject));
+        }
+    }
+
+    private void logUnionPayBusinessError(String operationName, JSONObject jsonObject) {
+        if (jsonObject != null && !SysConstants.SUCCESS.equals(jsonObject.getString("errCode"))) {
+            log.warn("{}业务响应非成功：{}", operationName, buildUnionPayErrorMessage(jsonObject));
+        }
+    }
+
+    private String buildUnionPayErrorMessage(JSONObject jsonObject) {
+        String errCode = jsonObject.getString("errCode");
+        String errMsg = jsonObject.getString("errMsg");
+        return "errCode=" + errCode + "，errMsg=" + errMsg;
+    }
+
+    private String buildNotifyWaitSign(Map<String, String[]> parameterMap) {
+        TreeMap<String, String> sortedParams = new TreeMap<>();
+        for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+            String key = entry.getKey();
+            String value = getFirstNonEmptyValue(entry.getValue());
+            if (key == null || "sign".equals(key) || value == null || value.trim().isEmpty()) {
+                continue;
+            }
+            sortedParams.put(key, value);
+        }
+
+        StringJoiner joiner = new StringJoiner("&");
+        for (Map.Entry<String, String> entry : sortedParams.entrySet()) {
+            joiner.add(entry.getKey() + "=" + entry.getValue());
+        }
+        return joiner.toString();
+    }
+
+    private String getNotifySignKey() {
+        if (notifySignKey != null && !notifySignKey.trim().isEmpty()) {
+            return notifySignKey;
+        }
+        return appletAppKey;
+    }
+
+    private String getFirstValue(Map<String, String[]> parameterMap, String key) {
+        return getFirstNonEmptyValue(parameterMap.get(key));
+    }
+
+    private String getFirstNonEmptyValue(String[] values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     @PreDestroy
     public void destroy() {
         try {
@@ -345,5 +450,4 @@ public class UnionPayServiceImpl implements UnionPayService {
             log.error("关闭HttpClient失败", e);
         }
     }
-
 }

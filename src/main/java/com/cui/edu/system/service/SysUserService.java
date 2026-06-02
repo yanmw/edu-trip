@@ -7,6 +7,7 @@ import com.cui.edu.system.entity.SysUserRole;
 import com.cui.edu.vo.system.UserVO;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -20,7 +21,7 @@ public interface SysUserService extends IService<SysUser> {
 
     SysUser findByUsername(String username);
 
-    void saveUser(SysUser user);
+    Map saveUser(SysUser user);
 
     void updateUserStatus(Long id, Integer status);
 

@@ -1,5 +1,6 @@
 package com.cui.edu.trip.service;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.Order;
 import com.baomidou.mybatisplus.extension.service.IService;
@@ -48,9 +49,12 @@ public interface OrderService extends IService<Order> {
      *
      * @param orderNo 系统订单号，对应银联回调 merOrderId
      * @param tradeNo 银联订单号，对应银联回调 targetOrderId
+     * @param totalAmount 银联回调或查询返回的订单金额
+     * @param mid 银联商户号
+     * @param tid 银联终端号
      * @param requestString 银联原始回调内容或银联查询结果JSON，用于日志追踪
      */
-    void unionPayNotify(String orderNo, String tradeNo, String requestString);
+    void unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString);
 
     /**
      * 处理银联退款成功回调。
@@ -76,15 +80,48 @@ public interface OrderService extends IService<Order> {
      */
     void unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString);
 
+    /**
+     * 处理银联退款查询明确失败的结果。
+     *
+     * @param orderNo 系统订单号
+     * @param refundOrderId 退款订单号
+     */
+    void handleRefundQueryFailed(String orderNo, String refundOrderId);
+
+    /**
+     * 记录银联退款查询结果。
+     *
+     * <p>退款查询可能只是处理中，不一定会修改订单状态，但仍需要进入订单日志用于追踪补偿链路。</p>
+     *
+     * @param orderNo 系统订单号
+     * @param refundOrderId 退款订单号
+     * @param money 本次退款金额
+     * @param result 银联退款查询响应
+     * @param eventSource 事件来源
+     * @param remark 备注
+     */
+    void recordUnionRefundQueryLog(String orderNo, String refundOrderId, Integer money, JSONObject result, String eventSource, String remark);
+
     void handlePayingOrderExpired(String orderNo) throws Exception;
 
     Map refund(Long orderDetailId, String refundReason) throws Exception;
 
-    Map refundAll(String orderId, String refundReason) throws Exception;
+    Map refundAll(String orderNo, String refundReason) throws Exception;
 
     Map refundQuery(Long id) throws Exception;
 
     void abandonPayingOrder(Order order);
+
+    /**
+     * 根据订单号放弃待支付订单。
+     *
+     * <p>放弃前会先查询银联支付状态，避免用户实际已支付但本地误改为放弃支付。</p>
+     *
+     * @param orderNo 系统订单号
+     * @return 空 Map 表示放弃成功，带 msg 表示失败原因
+     * @throws Exception 银联查询接口异常
+     */
+    Map abandonPayingOrder(String orderNo) throws Exception;
 
     Map verification(VerificationVO vo);
 

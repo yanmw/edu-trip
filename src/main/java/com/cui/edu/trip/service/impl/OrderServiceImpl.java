@@ -15,6 +15,7 @@ import com.cui.edu.config.redis.Lock;
 import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.trip.entity.ActivityManage;
+import com.cui.edu.trip.entity.ActivitySchedule;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.entity.OrderDetail;
 import com.cui.edu.trip.entity.OrderLog;
@@ -22,6 +23,7 @@ import com.cui.edu.trip.entity.Team;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.mapper.OrderMapper;
 import com.cui.edu.trip.service.ActivityManageService;
+import com.cui.edu.trip.service.ActivityScheduleService;
 import com.cui.edu.trip.service.OrderDetailService;
 import com.cui.edu.trip.service.OrderLogService;
 import com.cui.edu.trip.service.OrderService;
@@ -42,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -70,6 +73,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     @Autowired
     private ActivityManageService activityManageService;
+
+    @Autowired
+    private ActivityScheduleService activityScheduleService;
 
     @Autowired
     private RedisUtils redisUtils;
@@ -106,27 +112,91 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map add(AppointmentVO vo, HttpServletRequest request) throws Exception {
-        // 第一步：下单前先做完整业务校验，避免无效订单进入银联支付流程。
-        String checkMsg = checkAppointment(vo);
-        if (ObjectUtil.isNotEmpty(checkMsg)) {
-            return msgResult(checkMsg);
+        // 同一预约日期、活动、场次的下单需要串行化，避免并发下单同时通过名额校验。
+        List<Lock> appointmentSlotLocks = lockAppointmentSlots(vo);
+        if (appointmentSlotLocks == null) {
+            return msgResult("当前活动场次正在下单，请稍后重试");
         }
+        try {
+            // 第一步：下单前先做完整业务校验，避免无效订单进入银联支付流程。
+            String checkMsg = checkAppointment(vo);
+            if (ObjectUtil.isNotEmpty(checkMsg)) {
+                return msgResult(checkMsg);
+            }
 
-        // 第二步：根据博物馆配置发起银联下单，银联参数成功返回后才落本地订单。
-        Museum museum = museumService.getById(vo.getMuseumId());
-        // 构建待支付订单，并估算总金额，创建小程序支付参数
-        Order order = buildPayingOrder(vo, countOrderQuantity(vo));
-        String params = requestWechatPayParams(order, vo, museum);
-        order.setMiniProgramPayParams(params);
-        if (ObjectUtil.isEmpty(params)) {
-            return msgResult("创建订单失败，支付参数未成功获取");
+            // 第二步：根据博物馆配置发起银联下单，银联参数成功返回后才落本地订单。
+            Museum museum = museumService.getById(vo.getMuseumId());
+            // 构建待支付订单，并估算总金额，创建小程序支付参数
+            Order order = buildPayingOrder(vo, countOrderQuantity(vo));
+            String params = requestWechatPayParams(order, vo, museum);
+            order.setMiniProgramPayParams(params);
+            if (ObjectUtil.isEmpty(params)) {
+                return msgResult("创建订单失败，支付参数未成功获取");
+            }
+
+            // 第三步：保存主子订单，并写入 Redis 待支付缓存，后续靠回调或过期补偿推进状态。
+            savePayingOrder(order, vo);
+            cachePayingOrder(order);
+            saveOrderCreatedLog(order, vo);
+            return buildAddResult(order);
+        } finally {
+            // 无论下单成功、校验失败还是银联异常，都要释放场次锁，避免后续用户无法下单。
+            releaseAppointmentSlotLocks(appointmentSlotLocks);
         }
+    }
 
-        // 第三步：保存主子订单，并写入 Redis 待支付缓存，后续靠回调或过期补偿推进状态。
-        savePayingOrder(order, vo);
-        cachePayingOrder(order);
-        saveOrderCreatedLog(order, vo);
-        return buildAddResult(order);
+    /**
+     * 按预约日期、活动、场次加锁，保证名额校验到订单保存期间同一场次串行处理。
+     *
+     * @param vo 下单参数
+     * @return 锁集合；返回 null 表示获取锁失败
+     */
+    private List<Lock> lockAppointmentSlots(AppointmentVO vo) {
+        // 基础参数不完整时先不加锁，后续参数校验会返回更明确的业务提示。
+        if (ObjectUtil.isEmpty(vo) || ObjectUtil.isEmpty(vo.getMuseumId())
+                || ObjectUtil.isEmpty(vo.getAppointmentDate()) || ObjectUtil.isEmpty(vo.getList())) {
+            return Collections.emptyList();
+        }
+        // TreeSet 保证多个场次按固定顺序加锁，降低并发下单时互相等待的风险。
+        Set<String> lockNames = new TreeSet<>();
+        for (AppointmentVO.AppointmentDetailVO detailVO : vo.getList()) {
+            // 明细参数缺失时不参与锁构建，后续 checkAppointmentDetail 会统一给出提示。
+            if (ObjectUtil.isEmpty(detailVO) || ObjectUtil.isEmpty(detailVO.getActivityManageId())
+                    || ObjectUtil.isEmpty(detailVO.getActivityScheduleId())) {
+                continue;
+            }
+            // 锁粒度精确到博物馆、预约日期、活动和场次，同一场次串行，不同场次互不影响。
+            lockNames.add("order:add:capacity:" + vo.getMuseumId() + ":" + vo.getAppointmentDate()
+                    + ":" + detailVO.getActivityManageId() + ":" + detailVO.getActivityScheduleId());
+        }
+        List<Lock> locks = new ArrayList<>();
+        for (String lockName : lockNames) {
+            Lock lock = new Lock(lockName, UUID.randomUUID().toString());
+            // 下单链路会访问银联，锁有效期给到 60 秒；获取锁最多等待 5 秒。
+            boolean locked = distributedLockHandler.tryLock(lock, 5000L, 50L, 60 * 1000L);
+            if (!locked) {
+                // 任意一个场次锁获取失败，都释放已获取的锁并让前端稍后重试。
+                releaseAppointmentSlotLocks(locks);
+                return null;
+            }
+            locks.add(lock);
+        }
+        return locks;
+    }
+
+    /**
+     * 释放本次下单占用的场次锁。
+     *
+     * @param locks 已获取的锁集合
+     */
+    private void releaseAppointmentSlotLocks(List<Lock> locks) {
+        if (ObjectUtil.isEmpty(locks)) {
+            return;
+        }
+        for (Lock lock : locks) {
+            // Redis 锁释放使用 value 校验，防止误删其他请求后续拿到的同名锁。
+            distributedLockHandler.releaseLock(lock);
+        }
     }
 
     /**
@@ -211,6 +281,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setOrderType(ObjectUtil.isNotEmpty(vo.getTeamId()) ? 2 : 1);
         order.setIsUsed(SysConstants.IS_FALSE);
         order.setIsDeleted(SysConstants.IS_FALSE);
+        order.setAppointmentDate(vo.getAppointmentDate());
         order.setMuseumId(vo.getMuseumId());
         order.setOrderQuantity(orderQuantity);
         order.setOrderNo(textCodeGenerator.generate());
@@ -250,6 +321,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderDetail.setOrderId(order.getId());
         orderDetail.setOrderNo(order.getOrderNo());
         orderDetail.setActivityId(detailVO.getActivityManageId());
+        orderDetail.setActivityScheduleId(detailVO.getActivityScheduleId());
         orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.INIT.getValue());
         orderDetail.setMuseumId(order.getMuseumId());
         orderDetail.setOrderAmount(activityManage.getPrice());
@@ -2510,7 +2582,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     /**
      * 下单前置业务校验总入口。
      *
-     * <p>按参数完整性、游客/团队合法性、博物馆配置、活动金额一致性逐步校验；
+     * <p>按参数完整性、游客/团队合法性、博物馆配置、活动金额一致性、场次名额逐步校验；
      * 任一环节失败直接返回前端提示。</p>
      *
      * @param vo 下单参数
@@ -2537,8 +2609,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isNotEmpty(checkMsg)) {
             return checkMsg;
         }
-        // 最后按数据库活动价格重新计算金额，防止前端金额被篡改。
-        return checkAppointmentAmount(vo);
+        // 按数据库活动价格重新计算金额，防止前端金额被篡改。
+        checkMsg = checkAppointmentAmount(vo);
+        if (ObjectUtil.isNotEmpty(checkMsg)) {
+            return checkMsg;
+        }
+        // 最后校验活动场次剩余名额，防止超出场次人数限制。
+        return checkAppointmentCapacity(vo);
     }
 
     /**
@@ -2562,6 +2639,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (ObjectUtil.isEmpty(vo.getMoney()) || vo.getMoney() <= 0) {
             return "支付金额不能为空且必须大于0";
+        }
+        if (ObjectUtil.isEmpty(vo.getAppointmentDate())) {
+            return "预约日期不能为空";
+        }
+        if (vo.getAppointmentDate().isBefore(LocalDate.now())) {
+            return "预约日期不能早于今天";
         }
         if (ObjectUtil.isEmpty(vo.getList())) {
             return "下单详情不能为空";
@@ -2668,6 +2751,67 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
+     * 校验活动场次剩余名额是否足够。
+     *
+     * <p>同一个下单请求可能重复传入同一活动、同一场次，因此先聚合本次请求数量；
+     * 数据库侧统计待支付、支付成功、退款中的子订单，这些订单都会临时或实际占用名额。</p>
+     *
+     * @param vo 下单参数
+     * @return null 表示名额足够，否则返回前端提示
+     */
+    private String checkAppointmentCapacity(AppointmentVO vo) {
+        // requestQuantityMap：统计本次请求里同一活动、同一场次一共要购买多少张。
+        Map<String, Integer> requestQuantityMap = new LinkedHashMap<>();
+        // detailMap：保存每个活动场次的一条原始明细，后面查询已预约人数时复用活动ID和场次ID。
+        Map<String, AppointmentVO.AppointmentDetailVO> detailMap = new HashMap<>();
+        // scheduleMap：保存每个活动场次的数据库配置，后面读取 scheduleNumber 做容量判断。
+        Map<String, ActivitySchedule> scheduleMap = new HashMap<>();
+        for (AppointmentVO.AppointmentDetailVO detailVO : vo.getList()) {
+            String capacityKey = buildScheduleCapacityKey(detailVO.getActivityManageId(), detailVO.getActivityScheduleId());
+            // 同一单内重复选择同一活动场次时，需要合并数量，避免拆成多条明细绕过人数限制。
+            requestQuantityMap.put(capacityKey, requestQuantityMap.getOrDefault(capacityKey, 0) + detailVO.getNum());
+            detailMap.putIfAbsent(capacityKey, detailVO);
+
+            // 查询场次配置，拿到当前活动场次允许预约的人数上限。
+            ActivitySchedule activitySchedule = activityScheduleService.getById(detailVO.getActivityScheduleId());
+            if (ObjectUtil.isEmpty(activitySchedule)) {
+                return "活动场次不存在";
+            }
+            if (ObjectUtil.isEmpty(activitySchedule.getScheduleNumber()) || activitySchedule.getScheduleNumber() <= 0) {
+                return "活动场次人数配置有误";
+            }
+            // 同一个活动场次只保留一份配置，避免重复查询结果覆盖无意义。
+            scheduleMap.putIfAbsent(capacityKey, activitySchedule);
+        }
+
+        // 遍历聚合后的活动场次，逐个判断“已预约人数 + 本次购买人数”是否超出上限。
+        for (Map.Entry<String, Integer> entry : requestQuantityMap.entrySet()) {
+            AppointmentVO.AppointmentDetailVO detailVO = detailMap.get(entry.getKey());
+            ActivitySchedule activitySchedule = scheduleMap.get(entry.getKey());
+            // 查询数据库里当前日期、活动、场次已经占用的子订单数量。
+            int bookedQuantity = orderDetailService.countBookedQuantity(vo.getMuseumId(), detailVO.getActivityManageId(),
+                    detailVO.getActivityScheduleId(), vo.getAppointmentDate());
+            // 已预约人数包含待支付订单，待支付订单 15 分钟超时释放后才不再占用名额。
+            int remainingQuantity = activitySchedule.getScheduleNumber() - bookedQuantity;
+            if (entry.getValue() > remainingQuantity) {
+                return "活动场次余票不足，剩余名额" + Math.max(remainingQuantity, 0) + "人";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 构建活动场次容量校验用的聚合键。
+     *
+     * @param activityId         活动ID
+     * @param activityScheduleId 活动场次ID
+     * @return 聚合键
+     */
+    private String buildScheduleCapacityKey(Long activityId, Long activityScheduleId) {
+        return activityId + ":" + activityScheduleId;
+    }
+
+    /**
      * 校验单条活动下单明细。
      *
      * @param vo       下单参数
@@ -2675,15 +2819,37 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @return null 表示明细校验通过，否则返回前端提示
      */
     private String checkAppointmentDetail(AppointmentVO vo, AppointmentVO.AppointmentDetailVO detailVO) {
+        // 先校验明细必填项，保证后续查询活动和场次时不会出现空指针。
         if (ObjectUtil.isEmpty(detailVO) || ObjectUtil.isEmpty(detailVO.getActivityManageId())) {
             return "活动ID不能为空";
+        }
+        if (ObjectUtil.isEmpty(detailVO.getActivityScheduleId())) {
+            return "活动场次ID不能为空";
         }
         if (ObjectUtil.isEmpty(detailVO.getNum()) || detailVO.getNum() <= 0) {
             return "活动数量不能为空且必须大于0";
         }
+        // 查询活动主表，校验活动本身是否可售、是否属于当前博物馆、价格是否正常。
         ActivityManage activityManage = activityManageService.getById(detailVO.getActivityManageId());
         if (ObjectUtil.isEmpty(activityManage) || SysConstants.IS_TRUE.equals(activityManage.getIsDeleted())) {
             return "活动不存在或已删除";
+        }
+        if (ObjectUtil.isEmpty(activityManage.getActivityStartDate()) || ObjectUtil.isEmpty(activityManage.getActivityEndDate())
+                || activityManage.getActivityStartDate().isAfter(activityManage.getActivityEndDate())) {
+            return "活动日期配置有误";
+        }
+        // 预约日期以主订单 appointmentDate 为准，必须落在活动开放日期范围内。
+        if (vo.getAppointmentDate().isBefore(activityManage.getActivityStartDate())
+                || vo.getAppointmentDate().isAfter(activityManage.getActivityEndDate())) {
+            return "预约日期不在活动开放日期范围内";
+        }
+        // 场次必须存在，并且必须挂在当前活动下，避免前端把其他活动的场次混传进来。
+        ActivitySchedule activitySchedule = activityScheduleService.getById(detailVO.getActivityScheduleId());
+        if (ObjectUtil.isEmpty(activitySchedule)) {
+            return "活动场次不存在";
+        }
+        if (!detailVO.getActivityManageId().equals(activitySchedule.getActivityId())) {
+            return "活动场次不属于当前活动";
         }
         if (!SysConstants.IS_TRUE.equals(activityManage.getStatus())) {
             return "活动已禁用";

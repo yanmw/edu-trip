@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import java.util.List;
@@ -92,6 +93,9 @@ public class Order implements Serializable {
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updateTime;
 
+    @ApiModelProperty(value = "预约日期")
+    private LocalDate appointmentDate;
+
     @ApiModelProperty(value = "子订单列表")
     @TableField(exist = false)
     private List<OrderDetail> detailList;
@@ -130,6 +134,8 @@ public class Order implements Serializable {
     public static final String CREATE_TIME = "create_time";
 
     public static final String UPDATE_TIME = "update_time";
+
+    public static final String APPOINTMENT_DATE = "appointment_date";
 
     /**
      * 订单状态枚举

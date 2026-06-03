@@ -8,6 +8,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 import java.util.List;
@@ -61,6 +62,16 @@ public class ActivityManage implements Serializable {
 
     @ApiModelProperty(value = "活动地点")
     private String activityLocation;
+
+    @ApiModelProperty(value = "活动开始日期")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
+    private LocalDate activityStartDate;
+
+    @ApiModelProperty(value = "活动结束日期")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
+    private LocalDate activityEndDate;
 
     @ApiModelProperty(value = "报名须知")
     private String registrationNotice;
@@ -116,6 +127,10 @@ public class ActivityManage implements Serializable {
     public static final String APPLICABLE_PEOPLE = "applicable_people";
 
     public static final String ACTIVITY_LOCATION = "activity_location";
+
+    public static final String ACTIVITY_START_DATE = "activity_start_date";
+
+    public static final String ACTIVITY_END_DATE = "activity_end_date";
 
     public static final String REGISTRATION_NOTICE = "registration_notice";
 

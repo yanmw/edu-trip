@@ -12,6 +12,8 @@ import springfox.documentation.spi.DocumentationType;
 import springfox.documentation.spring.web.plugins.Docket;
 import springfox.documentation.swagger2.annotations.EnableSwagger2;
 
+import java.time.LocalTime;
+
 
 /**
  * @Author Cui
@@ -30,6 +32,7 @@ public class SwaggerConfig {
         return new Docket(DocumentationType.SWAGGER_2).apiInfo(apiInfo()).select()
                 .apis(RequestHandlerSelectors.basePackage("com.cui.edu")).paths(PathSelectors.any())
                 .build().pathMapping("/")
+                .directModelSubstitute(LocalTime.class, String.class)
                 .enable(enable);
     }
 

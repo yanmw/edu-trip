@@ -2,4 +2,31 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.cui.edu.trip.mapper.OrderDetailMapper">
 
+    <select id="countBookedQuantity" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM order_detail od
+        <!-- 预约日期在主订单表，活动和场次在子订单表，所以这里需要联表统计。 -->
+        INNER JOIN `order` o ON o.id = od.order_id
+        WHERE od.museum_id = #{museumId}
+          AND od.activity_id = #{activityId}
+          AND od.activity_schedule_id = #{activityScheduleId}
+          AND o.appointment_date = #{appointmentDate}
+          AND (od.is_deleted = 0 OR od.is_deleted IS NULL)
+          AND (o.is_deleted = 0 OR o.is_deleted IS NULL)
+        <!-- 只统计仍占用名额的主订单状态，例如待支付、支付成功、退款中。 -->
+        <if test="orderStatuses != null and orderStatuses.size() > 0">
+          AND o.order_status IN
+          <foreach collection="orderStatuses" item="status" open="(" separator="," close=")">
+              #{status}
+          </foreach>
+        </if>
+        <!-- 只统计仍占用名额的子订单状态，已放弃和已退款的子订单不再占用名额。 -->
+        <if test="detailStatuses != null and detailStatuses.size() > 0">
+          AND od.order_status IN
+          <foreach collection="detailStatuses" item="status" open="(" separator="," close=")">
+              #{status}
+          </foreach>
+        </if>
+    </select>
+
 </mapper>

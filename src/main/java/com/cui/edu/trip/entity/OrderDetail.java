@@ -84,6 +84,9 @@ public class OrderDetail implements Serializable {
     @ApiModelProperty(value = "退款订单id")
     private String refundId;
 
+    @ApiModelProperty(value = "活动场次表id")
+    private Long activityScheduleId;
+
 
     public static final String ID = "id";
 
@@ -112,6 +115,8 @@ public class OrderDetail implements Serializable {
     public static final String UPDATE_TIME = "update_time";
 
     public static final String REFUND_ID = "refund_id";
+
+    public static final String ACTIVITY_SCHEDULE_ID = "activity_schedule_id";
 
     public enum OrderDetailStatusEnum {
         /**

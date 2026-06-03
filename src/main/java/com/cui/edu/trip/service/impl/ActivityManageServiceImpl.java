@@ -156,8 +156,8 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         }
         QueryWrapper<ActivitySchedule> ew = new QueryWrapper<>();
         ew.eq(ActivitySchedule.ACTIVITY_ID, activityManage.getId());
-        // 详情和列表统一按日期、开始时间展示场次。
-        ew.orderByAsc(ActivitySchedule.ACTIVITY_DATE, ActivitySchedule.START_TIME);
+        // 场次表不再保存日期，日期范围由活动主表维护，这里只按时间展示场次。
+        ew.orderByAsc(ActivitySchedule.START_TIME, ActivitySchedule.END_TIME);
         activityManage.setActivityScheduleList(activityScheduleService.list(ew));
     }
 

@@ -1,9 +1,12 @@
 package com.cui.edu.vo.trip;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Data
@@ -25,6 +28,11 @@ public class AppointmentVO {
     @ApiModelProperty(value = "团队id")
     private Long teamId;
 
+    @ApiModelProperty(value = "预约日期")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
+    private LocalDate appointmentDate;
+
     @ApiModelProperty(value = "下单详情")
     private List<AppointmentDetailVO> list;
 
@@ -32,6 +40,9 @@ public class AppointmentVO {
     public static class AppointmentDetailVO {
         @ApiModelProperty(value = "活动管理表id")
         private Long activityManageId;
+
+        @ApiModelProperty(value = "活动场次表id")
+        private Long activityScheduleId;
 
         @ApiModelProperty(value = "数量")
         private Integer num;

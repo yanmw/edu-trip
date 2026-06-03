@@ -5,7 +5,6 @@ package com.cui.edu.trip.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
-import java.time.LocalDate;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalTime;
 import java.time.LocalDateTime;
@@ -39,17 +38,12 @@ public class ActivitySchedule implements Serializable {
     @ApiModelProperty(value = "活动管理表ID")
     private Long activityId;
 
-    @ApiModelProperty(value = "活动日期")
-    @JsonFormat(pattern = "yyyy-MM-dd")
-    @DateTimeFormat(pattern = "yyyy-MM-dd")
-    private LocalDate activityDate;
-
-    @ApiModelProperty(value = "开始时间")
+    @ApiModelProperty(value = "开始时间", dataType = "string", example = "09:00:00")
     @JsonFormat(pattern = "HH:mm:ss")
     @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime startTime;
 
-    @ApiModelProperty(value = "结束时间")
+    @ApiModelProperty(value = "结束时间", dataType = "string", example = "17:00:00")
     @JsonFormat(pattern = "HH:mm:ss")
     @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime endTime;
@@ -84,8 +78,6 @@ public class ActivitySchedule implements Serializable {
     public static final String ID = "id";
 
     public static final String ACTIVITY_ID = "activity_id";
-
-    public static final String ACTIVITY_DATE = "activity_date";
 
     public static final String START_TIME = "start_time";
 

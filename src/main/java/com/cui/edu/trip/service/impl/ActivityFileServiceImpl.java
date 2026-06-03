@@ -34,6 +34,9 @@ public class ActivityFileServiceImpl extends ServiceImpl<ActivityFileMapper, Act
         if (vo.getActivityId() != null) {
             ew.eq(ActivityFile.ACTIVITY_ID, vo.getActivityId());
         }
+        if (vo.getMuseumId() != null) {
+            ew.eq(ActivityFile.MUSEUM_ID, vo.getMuseumId());
+        }
         if (StringUtils.isNotBlank(vo.getFileName())) {
             ew.like(ActivityFile.FILE_NAME, vo.getFileName());
         }

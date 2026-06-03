@@ -12,6 +12,9 @@ public class ActivityFileVO extends BasisVO {
     @ApiModelProperty(value = "活动ID")
     private Long activityId;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
     @ApiModelProperty(value = "文件名称")
     private String fileName;
 }

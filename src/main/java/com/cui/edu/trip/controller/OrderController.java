@@ -153,7 +153,7 @@ public class OrderController {
      * 根据游客微信 openId 或团队 ID 分页查询订单列表。
      *
      * <p>openId 用于查询游客个人订单，teamId 用于查询团队订单；两个参数至少传一个。
-     * 返回的每条主订单都会带 detailList 子订单集合。</p>
+     * 返回的每条主订单都会带 detailList 子订单集合，并补充博物馆、游客、团队、活动、场次等关联信息。</p>
      */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "根据游客openId或团队ID分页查询订单列表")

@@ -38,6 +38,9 @@ public class ActivityFile implements Serializable {
     @ApiModelProperty(value = "活动ID")
     private Long activityId;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
     @ApiModelProperty(value = "文件名称")
     private String fileName;
 
@@ -71,6 +74,8 @@ public class ActivityFile implements Serializable {
     public static final String ID = "id";
 
     public static final String ACTIVITY_ID = "activity_id";
+
+    public static final String MUSEUM_ID = "museum_id";
 
     public static final String FILE_NAME = "file_name";
 

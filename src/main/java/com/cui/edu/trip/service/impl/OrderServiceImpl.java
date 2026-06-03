@@ -49,6 +49,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.function.Function;
 
 /**
  * <p>
@@ -1637,10 +1638,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 根据游客微信 openId 或团队 ID 分页查询订单列表。
      *
      * <p>游客订单通过 openId 先定位游客，再按 visitorId 查询；团队订单直接按 teamId 查询。
-     * 如果两个条件都传入，则查询满足任一条件的订单。分页查询只处理当前页订单，并给每个 Order 的 detailList 字段放入子订单集合。</p>
+     * 如果两个条件都传入，则查询满足任一条件的订单。分页查询只处理当前页订单，并给每个 Order 的 detailList 和关联表信息字段赋值。</p>
      *
      * @param vo 订单分页查询参数
-     * @return 分页订单列表，每条订单的 detailList 字段包含子订单集合
+     * @return 分页订单列表，每条订单包含子订单集合及相关表信息
      */
     @Override
     public PageResult findPage(OrderVO vo) {
@@ -1658,6 +1659,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         // 第三步：当前页主订单查出后，再批量补充子订单列表。
         fillOrderDetailList(page.getRecords());
+        // 第四步：批量补充订单和子订单里保存的外键对应的表信息。
+        fillOrderRelationInfo(page.getRecords());
         return PageResultUtil.getPageResult(page);
     }
 
@@ -1731,6 +1734,131 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             // 子订单直接放到 Order 的非数据库字段 detailList 中返回给前端。
             order.setDetailList(detailMap.getOrDefault(order.getOrderNo(), Collections.emptyList()));
         }
+    }
+
+    /**
+     * 给当前页订单补充关联表信息。
+     *
+     * <p>主订单补充博物馆、游客、团队；子订单补充博物馆、活动、活动场次。
+     * 所有关联表都按当前页涉及的 ID 批量查询，避免 N+1 查询问题。</p>
+     *
+     * @param orderList 当前页主订单列表
+     */
+    private void fillOrderRelationInfo(List<Order> orderList) {
+        if (ObjectUtil.isEmpty(orderList)) {
+            return;
+        }
+        Set<Long> museumIds = new HashSet<>();
+        Set<Long> visitorIds = new HashSet<>();
+        Set<Long> teamIds = new HashSet<>();
+        Set<Long> activityIds = new HashSet<>();
+        Set<Long> activityScheduleIds = new HashSet<>();
+        List<OrderDetail> allDetailList = new ArrayList<>();
+
+        for (Order order : orderList) {
+            // 先收集主订单上的外键 ID，后面统一批量查询对应表。
+            addId(museumIds, order.getMuseumId());
+            addId(visitorIds, order.getVisitorId());
+            addId(teamIds, order.getTeamId());
+            if (ObjectUtil.isEmpty(order.getDetailList())) {
+                continue;
+            }
+            for (OrderDetail orderDetail : order.getDetailList()) {
+                allDetailList.add(orderDetail);
+                // 子订单上也保存了博物馆、活动和场次 ID，需要一起补充对应表信息。
+                addId(museumIds, orderDetail.getMuseumId());
+                addId(activityIds, orderDetail.getActivityId());
+                addId(activityScheduleIds, orderDetail.getActivityScheduleId());
+            }
+        }
+
+        Map<Long, Museum> museumMap = getMuseumMap(museumIds);
+        Map<Long, Visitor> visitorMap = getVisitorMap(visitorIds);
+        Map<Long, Team> teamMap = getTeamMap(teamIds);
+        Map<Long, ActivityManage> activityManageMap = getActivityManageMap(activityIds);
+        Map<Long, ActivitySchedule> activityScheduleMap = getActivityScheduleMap(activityScheduleIds);
+
+        for (Order order : orderList) {
+            // 主订单直接挂上外键对应的对象，前端不用再根据 ID 反查。
+            order.setMuseum(museumMap.get(order.getMuseumId()));
+            order.setVisitor(visitorMap.get(order.getVisitorId()));
+            order.setTeam(teamMap.get(order.getTeamId()));
+        }
+        for (OrderDetail orderDetail : allDetailList) {
+            // 子订单补充活动和场次详情，列表页可以直接展示活动名称、场次时间等信息。
+            orderDetail.setMuseum(museumMap.get(orderDetail.getMuseumId()));
+            orderDetail.setActivityManage(activityManageMap.get(orderDetail.getActivityId()));
+            orderDetail.setActivitySchedule(activityScheduleMap.get(orderDetail.getActivityScheduleId()));
+        }
+    }
+
+    /**
+     * 收集非空 ID，避免批量查询时出现空值。
+     *
+     * @param idSet ID 集合
+     * @param id    待加入的 ID
+     */
+    private void addId(Set<Long> idSet, Long id) {
+        if (ObjectUtil.isNotEmpty(id)) {
+            idSet.add(id);
+        }
+    }
+
+    /**
+     * 批量查询博物馆并转换为 id -> Museum 的 Map。
+     */
+    private Map<Long, Museum> getMuseumMap(Set<Long> museumIds) {
+        return ObjectUtil.isEmpty(museumIds) ? Collections.emptyMap() : toIdMap(museumService.listByIds(museumIds), Museum::getId);
+    }
+
+    /**
+     * 批量查询游客并转换为 id -> Visitor 的 Map。
+     */
+    private Map<Long, Visitor> getVisitorMap(Set<Long> visitorIds) {
+        return ObjectUtil.isEmpty(visitorIds) ? Collections.emptyMap() : toIdMap(visitorService.listByIds(visitorIds), Visitor::getId);
+    }
+
+    /**
+     * 批量查询团队并转换为 id -> Team 的 Map。
+     */
+    private Map<Long, Team> getTeamMap(Set<Long> teamIds) {
+        return ObjectUtil.isEmpty(teamIds) ? Collections.emptyMap() : toIdMap(teamService.listByIds(teamIds), Team::getId);
+    }
+
+    /**
+     * 批量查询活动并转换为 id -> ActivityManage 的 Map。
+     */
+    private Map<Long, ActivityManage> getActivityManageMap(Set<Long> activityIds) {
+        return ObjectUtil.isEmpty(activityIds) ? Collections.emptyMap() : toIdMap(activityManageService.listByIds(activityIds), ActivityManage::getId);
+    }
+
+    /**
+     * 批量查询活动场次并转换为 id -> ActivitySchedule 的 Map。
+     */
+    private Map<Long, ActivitySchedule> getActivityScheduleMap(Set<Long> activityScheduleIds) {
+        return ObjectUtil.isEmpty(activityScheduleIds) ? Collections.emptyMap() : toIdMap(activityScheduleService.listByIds(activityScheduleIds), ActivitySchedule::getId);
+    }
+
+    /**
+     * 把批量查询结果转换成以主键 ID 为 key 的 Map。
+     *
+     * @param records  数据库查询结果
+     * @param idGetter 获取主键 ID 的方法
+     * @param <T>      实体类型
+     * @return id -> 实体对象
+     */
+    private <T> Map<Long, T> toIdMap(Collection<T> records, Function<T, Long> idGetter) {
+        if (ObjectUtil.isEmpty(records)) {
+            return Collections.emptyMap();
+        }
+        Map<Long, T> result = new HashMap<>();
+        for (T record : records) {
+            Long id = idGetter.apply(record);
+            if (ObjectUtil.isNotEmpty(id)) {
+                result.put(id, record);
+            }
+        }
+        return result;
     }
 
     /**

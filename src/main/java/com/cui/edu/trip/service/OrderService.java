@@ -129,7 +129,7 @@ public interface OrderService extends IService<Order> {
      * 根据游客微信 openId 或团队 ID 分页查询订单列表，并附带子订单信息。
      *
      * @param vo 订单分页查询参数
-     * @return 分页订单列表，每条订单的 detailList 字段包含子订单集合
+     * @return 分页订单列表，每条订单包含子订单集合及相关表信息
      */
     PageResult findPage(OrderVO vo);
 }

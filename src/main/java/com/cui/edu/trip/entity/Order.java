@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.io.Serializable;
 import java.util.List;
 
+import com.cui.edu.system.entity.Museum;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -95,6 +96,18 @@ public class Order implements Serializable {
 
     @ApiModelProperty(value = "预约日期")
     private LocalDate appointmentDate;
+
+    @ApiModelProperty(value = "博物馆信息")
+    @TableField(exist = false)
+    private Museum museum;
+
+    @ApiModelProperty(value = "游客信息")
+    @TableField(exist = false)
+    private Visitor visitor;
+
+    @ApiModelProperty(value = "团队信息")
+    @TableField(exist = false)
+    private Team team;
 
     @ApiModelProperty(value = "子订单列表")
     @TableField(exist = false)

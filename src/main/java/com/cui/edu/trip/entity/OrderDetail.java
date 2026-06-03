@@ -13,6 +13,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalDateTime;
 import java.io.Serializable;
 
+import com.cui.edu.system.entity.Museum;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -86,6 +87,18 @@ public class OrderDetail implements Serializable {
 
     @ApiModelProperty(value = "活动场次表id")
     private Long activityScheduleId;
+
+    @ApiModelProperty(value = "博物馆信息")
+    @TableField(exist = false)
+    private Museum museum;
+
+    @ApiModelProperty(value = "活动信息")
+    @TableField(exist = false)
+    private ActivityManage activityManage;
+
+    @ApiModelProperty(value = "活动场次信息")
+    @TableField(exist = false)
+    private ActivitySchedule activitySchedule;
 
 
     public static final String ID = "id";

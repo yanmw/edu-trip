@@ -3,6 +3,7 @@ package com.cui.edu.trip.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.entity.ActivitySchedule;
 import com.cui.edu.trip.mapper.ActivityManageMapper;
@@ -12,15 +13,20 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.system.entity.Museum;
+import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.vo.trip.ActivityManageVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -36,9 +42,12 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     @Autowired
     private ActivityScheduleService activityScheduleService;
 
+    @Autowired
+    private MuseumService museumService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean saveActivityManage(ActivityManage record) {
+    public String saveActivityManage(ActivityManage record) {
         if (record.getId() == null) {
             if (record.getStatus() == null) {
                 record.setStatus(SysConstants.IS_TRUE);
@@ -48,14 +57,14 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
             }
         } else {
             ActivityManage oldActivityManage = super.getById(record.getId());
-            // 活动单价不允许修改，价格变化时由 Controller 返回业务提示。
-            if (oldActivityManage != null && !Objects.equals(oldActivityManage.getPrice(), record.getPrice())) {
-                return false;
+            String immutableFieldError = validateImmutableFields(oldActivityManage, record);
+            if (immutableFieldError != null) {
+                return immutableFieldError;
             }
         }
         super.saveOrUpdate(record);
         saveActivitySchedules(record);
-        return true;
+        return null;
     }
 
     @Override
@@ -63,6 +72,7 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         Page<ActivityManage> page = new Page<>(vo.getPageNum(), vo.getPageSize());
         QueryWrapper<ActivityManage> ew = buildQueryWrapper(vo);
         page = super.page(page, ew);
+        fillMuseumNames(page.getRecords());
         return PageResultUtil.getPageResult(page);
     }
 
@@ -77,8 +87,8 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
             activityManageList.add(activityManage);
         }
         super.updateBatchById(activityManageList);
-        // 活动删除后，场次不再单独保留。
-        removeSchedulesByActivityIds(ids);
+        // 活动删除后，场次不物理删除，只同步禁用。
+        disableSchedulesByActivityIds(ids);
     }
 
     @Override
@@ -130,24 +140,64 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (activityScheduleList == null) {
             return;
         }
-        // 前端提交的是活动场次的完整快照，先清旧数据再保存新数据。
-        removeSchedulesByActivityIds(Collections.singletonList(record.getId()));
+        List<ActivitySchedule> oldScheduleList = listSchedulesByActivityId(record.getId());
+        Set<Long> submitScheduleIds = activityScheduleList.stream()
+                .map(ActivitySchedule::getId)
+                .filter(ObjectUtil::isNotEmpty)
+                .collect(Collectors.toSet());
+        List<ActivitySchedule> insertList = new ArrayList<>();
+        List<ActivitySchedule> updateList = new ArrayList<>();
+        List<ActivitySchedule> disableList = new ArrayList<>();
         for (ActivitySchedule activitySchedule : activityScheduleList) {
-            activitySchedule.setId(null);
             activitySchedule.setActivityId(record.getId());
+            if (activitySchedule.getId() == null) {
+                if (activitySchedule.getStatus() == null) {
+                    activitySchedule.setStatus(SysConstants.IS_TRUE);
+                }
+                insertList.add(activitySchedule);
+            } else {
+                updateList.add(activitySchedule);
+            }
         }
-        if (!activityScheduleList.isEmpty()) {
-            activityScheduleService.saveBatch(activityScheduleList);
+        for (ActivitySchedule oldSchedule : oldScheduleList) {
+            if (!submitScheduleIds.contains(oldSchedule.getId())) {
+                oldSchedule.setStatus(SysConstants.IS_FALSE);
+                disableList.add(oldSchedule);
+            }
+        }
+        if (!insertList.isEmpty()) {
+            activityScheduleService.saveBatch(insertList);
+        }
+        if (!updateList.isEmpty()) {
+            activityScheduleService.updateBatchById(updateList);
+        }
+        if (!disableList.isEmpty()) {
+            activityScheduleService.updateBatchById(disableList);
         }
     }
 
-    private void removeSchedulesByActivityIds(List<Long> activityIds) {
+    private void disableSchedulesByActivityIds(List<Long> activityIds) {
         if (activityIds == null || activityIds.isEmpty()) {
             return;
         }
         QueryWrapper<ActivitySchedule> ew = new QueryWrapper<>();
         ew.in(ActivitySchedule.ACTIVITY_ID, activityIds);
-        activityScheduleService.remove(ew);
+        List<ActivitySchedule> activityScheduleList = activityScheduleService.list(ew);
+        for (ActivitySchedule activitySchedule : activityScheduleList) {
+            activitySchedule.setStatus(SysConstants.IS_FALSE);
+        }
+        if (!activityScheduleList.isEmpty()) {
+            activityScheduleService.updateBatchById(activityScheduleList);
+        }
+    }
+
+    private List<ActivitySchedule> listSchedulesByActivityId(Long activityId) {
+        if (activityId == null) {
+            return new ArrayList<>();
+        }
+        QueryWrapper<ActivitySchedule> ew = new QueryWrapper<>();
+        ew.eq(ActivitySchedule.ACTIVITY_ID, activityId);
+        return activityScheduleService.list(ew);
     }
 
     private void fillActivitySchedules(ActivityManage activityManage) {
@@ -156,6 +206,7 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         }
         QueryWrapper<ActivitySchedule> ew = new QueryWrapper<>();
         ew.eq(ActivitySchedule.ACTIVITY_ID, activityManage.getId());
+        ew.eq(ActivitySchedule.STATUS, SysConstants.IS_TRUE);
         // 场次表不再保存日期，日期范围由活动主表维护，这里只按时间展示场次。
         ew.orderByAsc(ActivitySchedule.START_TIME, ActivitySchedule.END_TIME);
         activityManage.setActivityScheduleList(activityScheduleService.list(ew));
@@ -165,5 +216,44 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         for (ActivityManage activityManage : activityManageList) {
             fillActivitySchedules(activityManage);
         }
+    }
+
+    private void fillMuseumNames(List<ActivityManage> activityManageList) {
+        Map<Long, String> museumNameMap = activityManageList.stream()
+                .map(ActivityManage::getMuseumId)
+                .filter(ObjectUtil::isNotEmpty)
+                .distinct()
+                .collect(Collectors.collectingAndThen(Collectors.toList(), museumIds -> {
+                    if (ObjectUtil.isEmpty(museumIds)) {
+                        return new HashMap<>();
+                    }
+                    return museumService.listByIds(museumIds).stream()
+                            .collect(Collectors.toMap(Museum::getId, Museum::getName));
+                }));
+        for (ActivityManage activityManage : activityManageList) {
+            activityManage.setMuseumName(museumNameMap.get(activityManage.getMuseumId()));
+        }
+    }
+
+    private String validateImmutableFields(ActivityManage oldActivityManage, ActivityManage record) {
+        if (oldActivityManage == null) {
+            return null;
+        }
+        if (!Objects.equals(oldActivityManage.getActivityTypeId(), record.getActivityTypeId())) {
+            return "活动类型不允许修改，请禁用活动后，新建一个活动内容";
+        }
+        if (!Objects.equals(oldActivityManage.getPrice(), record.getPrice())) {
+            return "活动单价不允许修改，请禁用活动后，新建一个活动内容";
+        }
+        if (!Objects.equals(oldActivityManage.getMuseumId(), record.getMuseumId())) {
+            return "博物馆不允许修改，请禁用活动后，新建一个活动内容";
+        }
+        if (!Objects.equals(oldActivityManage.getActivityStartDate(), record.getActivityStartDate())) {
+            return "活动开始日期不允许修改，请禁用活动后，新建一个活动内容";
+        }
+        if (!Objects.equals(oldActivityManage.getActivityEndDate(), record.getActivityEndDate())) {
+            return "活动结束日期不允许修改，请禁用活动后，新建一个活动内容";
+        }
+        return null;
     }
 }

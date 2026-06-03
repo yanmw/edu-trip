@@ -91,17 +91,15 @@ public class OrderController {
         }
     }
 
-    @GetMapping(value = "/refundAll")
+    @PostMapping(value = "/refundAll")
     @ApiOperation(value = "管理员退全款")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
-    public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam(value = "orderNo", required = false) String orderNo,
-                                @ApiParam(value = "兼容旧参数：主订单号") @RequestParam(value = "orderId", required = false) String orderId,
+    public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderNo,
                                 @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
-        String orderNoParam = ObjectUtil.isNotEmpty(orderNo) ? orderNo : orderId;
-        if (ObjectUtil.isEmpty(orderNoParam)) {
+        if (ObjectUtil.isEmpty(orderNo)) {
             return HttpResult.errorBadRequest();
         }
-        Map result = orderService.refundAll(orderNoParam, refundReason);
+        Map result = orderService.refundAll(orderNo, refundReason);
         if (result.containsKey(SysConstants.MSG)) {
             return HttpResult.error(result.get(SysConstants.MSG).toString());
         } else {
@@ -123,15 +121,13 @@ public class OrderController {
         }
     }
 
-    @GetMapping(value = "/abandon")
+    @PostMapping(value = "/abandon")
     @ApiOperation(value = "放弃支付")
-    public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam(value = "orderNo", required = false) String orderNo,
-                              @ApiParam(value = "兼容旧参数：订单号") @RequestParam(value = "orderId", required = false) String orderId) throws Exception {
-        String orderNoParam = ObjectUtil.isNotEmpty(orderNo) ? orderNo : orderId;
-        if (ObjectUtil.isEmpty(orderNoParam)) {
+    public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderNo) throws Exception {
+        if (ObjectUtil.isEmpty(orderNo)) {
             return HttpResult.errorBadRequest();
         }
-        Map result = orderService.abandonPayingOrder(orderNoParam);
+        Map result = orderService.abandonPayingOrder(orderNo);
         if (result.containsKey(SysConstants.MSG)) {
             return HttpResult.error(result.get(SysConstants.MSG).toString());
         }

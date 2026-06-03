@@ -51,6 +51,10 @@ public class ActivityManage implements Serializable {
     @ApiModelProperty(value = "博物馆ID")
     private Long museumId;
 
+    @ApiModelProperty(value = "博物馆名称")
+    @TableField(exist = false)
+    private String museumName;
+
     @ApiModelProperty(value = "封面URL")
     private String coverUrl;
 

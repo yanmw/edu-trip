@@ -1176,8 +1176,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Transactional(rollbackFor = Exception.class)
     public Map refundAll(String orderNo, String refundReason) throws Exception {
         Map<String, String> map = new HashMap(1);
-        // 第一步：查询主订单，兼容旧接口传数据库 id 的情况。
-        Order order = getOrderByOrderNoOrId(orderNo);
+        // 第一步：按系统订单号查询主订单，一键全退只接受明确的订单号。
+        Order order = getOrderByOrderNo(orderNo);
         if (ObjectUtil.isEmpty(order)) {
             map.put(SysConstants.MSG, "订单不存在");
             return map;
@@ -1563,26 +1563,25 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map abandonPayingOrder(String orderNo) throws Exception {
-        // 第一步：兼容旧参数，先解析出真实系统订单号。
-        Order order = getOrderByOrderNoOrId(orderNo);
+        // 第一步：按系统订单号查询订单，只有待支付订单才能主动放弃。
+        Order order = getOrderByOrderNo(orderNo);
         if (ObjectUtil.isEmpty(order)) {
             return msgResult("订单不存在");
         }
-        String resolvedOrderNo = order.getOrderNo();
         if (!Order.OrderStatusEnum.PAYING.getValue().equals(order.getOrderStatus())) {
             return msgResult("订单当前状态不允许放弃支付");
         }
 
         // 第二步：放弃前先查银联，防止用户实际已支付但本地还没收到回调。
         Museum museum = getRequiredUnionPayMuseum(order);
-        JSONObject queryResult = unionPayService.appletQuery(resolvedOrderNo, museum.getMid(), museum.getTid());
+        JSONObject queryResult = unionPayService.appletQuery(orderNo, museum.getMid(), museum.getTid());
         saveUnionPayQueryLog(order, OrderLog.ACTION_ORDER_ABANDON, OrderLog.SOURCE_USER,
-                buildUnionPayQueryRequest(resolvedOrderNo, museum), queryResult, "用户主动放弃支付前查询银联订单状态");
+                buildUnionPayQueryRequest(orderNo, museum), queryResult, "用户主动放弃支付前查询银联订单状态");
         if (ObjectUtil.isEmpty(queryResult) || !isUnionSuccessResponse(queryResult)) {
             return msgResult("银联订单状态暂不明确，请稍后再试");
         }
         if (isUnionPayTradeSuccess(queryResult)) {
-            syncPaySuccessFromUnionPayQuery(resolvedOrderNo, queryResult);
+            syncPaySuccessFromUnionPayQuery(orderNo, queryResult);
             return msgResult("银联已确认订单支付成功，无法放弃支付");
         }
         if (!isUnionPayCanAbandon(queryResult)) {
@@ -1837,28 +1836,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         orderWrapper.last("limit 1");
         return super.getOne(orderWrapper);
-    }
-
-    /**
-     * 按订单号查询订单，若未查到且参数为数字，则兼容按数据库主键查询。
-     *
-     * @param orderNoOrId 系统订单号或旧接口传入的数据库主键
-     * @return 主订单
-     */
-    private Order getOrderByOrderNoOrId(String orderNoOrId) {
-        Order order = getOrderByOrderNo(orderNoOrId);
-        if (ObjectUtil.isNotEmpty(order)) {
-            return order;
-        }
-        try {
-            order = super.getById(Long.valueOf(orderNoOrId));
-            if (ObjectUtil.isEmpty(order) || SysConstants.IS_TRUE.equals(order.getIsDeleted())) {
-                return null;
-            }
-            return order;
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     /**
@@ -2777,6 +2754,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             if (ObjectUtil.isEmpty(activitySchedule)) {
                 return "活动场次不存在";
             }
+            if (!SysConstants.IS_TRUE.equals(activitySchedule.getStatus())) {
+                return "活动场次已禁用";
+            }
             if (ObjectUtil.isEmpty(activitySchedule.getScheduleNumber()) || activitySchedule.getScheduleNumber() <= 0) {
                 return "活动场次人数配置有误";
             }
@@ -2850,6 +2830,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (!detailVO.getActivityManageId().equals(activitySchedule.getActivityId())) {
             return "活动场次不属于当前活动";
+        }
+        if (!SysConstants.IS_TRUE.equals(activitySchedule.getStatus())) {
+            return "活动场次已禁用";
         }
         if (!SysConstants.IS_TRUE.equals(activityManage.getStatus())) {
             return "活动已禁用";

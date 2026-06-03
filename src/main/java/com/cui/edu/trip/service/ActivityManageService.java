@@ -18,9 +18,9 @@ import java.util.List;
 public interface ActivityManageService extends IService<ActivityManage> {
 
     /**
-     * 保存活动及其场次；修改时活动单价变化则返回false。
+     * 保存活动及其场次；保存成功返回null，修改受限字段时返回错误提示。
      */
-    boolean saveActivityManage(ActivityManage record);
+    String saveActivityManage(ActivityManage record);
 
     /**
      * 分页查询未删除的活动。

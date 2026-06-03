@@ -43,10 +43,9 @@ public class ActivityManageController {
     @ApiOperation(value = "新增/修改活动")
     public HttpResult save(@RequestBody ActivityManage record) {
         if (BeanUtil.isNotEmpty(record)) {
-            boolean saved = activityManageService.saveActivityManage(record);
-            if (!saved) {
-                // 活动单价是历史订单计价依据，修改价格需新建活动。
-                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "活动单价不允许修改，请禁用活动后，新建一个活动内容");
+            String errorMsg = activityManageService.saveActivityManage(record);
+            if (errorMsg != null) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, errorMsg);
             }
             return HttpResult.ok(record.getId());
         } else {

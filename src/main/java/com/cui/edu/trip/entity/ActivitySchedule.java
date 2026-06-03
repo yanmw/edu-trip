@@ -51,6 +51,9 @@ public class ActivitySchedule implements Serializable {
     @ApiModelProperty(value = "场次人数")
     private Integer scheduleNumber;
 
+    @ApiModelProperty(value = "状态：1启用 0禁用")
+    private Integer status;
+
     @ApiModelProperty(value = "备注")
     private String remark;
 
@@ -84,6 +87,8 @@ public class ActivitySchedule implements Serializable {
     public static final String END_TIME = "end_time";
 
     public static final String SCHEDULE_NUMBER = "schedule_number";
+
+    public static final String STATUS = "status";
 
     public static final String REMARK = "remark";
 

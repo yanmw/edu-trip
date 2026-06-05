@@ -86,4 +86,14 @@ public class SkinManagementConfigServiceImpl extends ServiceImpl<SkinManagementC
         ew.eq(SkinManagementConfig.IS_DELETED, SysConstants.IS_FALSE);
         return super.getOne(ew);
     }
+
+    @Override
+    public SkinManagementConfig findByMuseumId(Long id) {
+        QueryWrapper<SkinManagementConfig> ew = new QueryWrapper<>();
+        ew.eq(SkinManagementConfig.MUSEUM_ID, id);
+        ew.eq(SkinManagementConfig.IS_DELETED, SysConstants.IS_FALSE);
+        ew.orderByDesc(SkinManagementConfig.ID);
+        ew.last("LIMIT 1");
+        return super.getOne(ew);
+    }
 }

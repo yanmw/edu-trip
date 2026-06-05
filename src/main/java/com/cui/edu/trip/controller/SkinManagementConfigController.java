@@ -91,4 +91,15 @@ public class SkinManagementConfigController {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
     }
+
+    @GetMapping(value = "/findByMuseumId/{id}")
+    @ApiOperation(value = "根据博物馆ID查询皮肤配置详情")
+    public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @PathVariable Long id) {
+        if (ObjectUtil.isNotEmpty(id)) {
+            SkinManagementConfig skinManagementConfig = skinManagementConfigService.findByMuseumId(id);
+            return HttpResult.ok(skinManagementConfig);
+        } else {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+    }
 }

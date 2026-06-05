@@ -31,4 +31,9 @@ public interface SkinManagementConfigService extends IService<SkinManagementConf
      * 根据ID查询未删除的皮肤配置详情。
      */
     SkinManagementConfig findById(Long id);
+
+    /**
+     * 根据博物馆ID查询皮肤配置详情。
+     */
+    SkinManagementConfig findByMuseumId(Long id);
 }

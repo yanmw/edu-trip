@@ -23,6 +23,11 @@ public interface ActivityManageService extends IService<ActivityManage> {
     String saveActivityManage(ActivityManage record);
 
     /**
+     * 审核通过活动，将活动状态置为启用。
+     */
+    String auditActivity(Long id);
+
+    /**
      * 分页查询未删除的活动。
      */
     PageResult findPage(ActivityManageVO vo);

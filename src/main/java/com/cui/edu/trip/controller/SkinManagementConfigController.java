@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -94,6 +95,7 @@ public class SkinManagementConfigController {
 
     @GetMapping(value = "/findByMuseumId/{id}")
     @ApiOperation(value = "根据博物馆ID查询皮肤配置详情")
+    @SaIgnore
     public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @PathVariable Long id) {
         if (ObjectUtil.isNotEmpty(id)) {
             SkinManagementConfig skinManagementConfig = skinManagementConfigService.findByMuseumId(id);

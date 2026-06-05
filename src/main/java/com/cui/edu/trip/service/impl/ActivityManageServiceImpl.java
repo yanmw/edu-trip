@@ -49,9 +49,8 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     @Transactional(rollbackFor = Exception.class)
     public String saveActivityManage(ActivityManage record) {
         if (record.getId() == null) {
-            if (record.getStatus() == null) {
-                record.setStatus(SysConstants.IS_TRUE);
-            }
+            // 新建活动默认禁用，必须通过审核接口启用。
+            record.setStatus(SysConstants.IS_FALSE);
             if (record.getIsDeleted() == null) {
                 record.setIsDeleted(SysConstants.IS_FALSE);
             }
@@ -61,9 +60,29 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
             if (immutableFieldError != null) {
                 return immutableFieldError;
             }
+            // 修改活动不能绕过审核流程变更状态，状态只由审核/删除等专用接口维护。
+            if (oldActivityManage != null) {
+                record.setStatus(oldActivityManage.getStatus());
+            }
         }
         super.saveOrUpdate(record);
         saveActivitySchedules(record);
+        return null;
+    }
+
+    @Override
+    public String auditActivity(Long id) {
+        ActivityManage activityManage = super.getById(id);
+        if (activityManage == null || SysConstants.IS_TRUE.equals(activityManage.getIsDeleted())) {
+            return "活动不存在";
+        }
+        if (SysConstants.IS_TRUE.equals(activityManage.getStatus())) {
+            return null;
+        }
+        ActivityManage update = new ActivityManage();
+        update.setId(id);
+        update.setStatus(SysConstants.IS_TRUE);
+        super.updateById(update);
         return null;
     }
 

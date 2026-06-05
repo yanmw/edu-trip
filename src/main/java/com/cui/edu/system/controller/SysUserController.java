@@ -2,6 +2,7 @@ package com.cui.edu.system.controller;
 
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.dev33.satoken.secure.SaSecureUtil;
 import cn.dev33.satoken.secure.totp.SaTotpUtil;
 import cn.dev33.satoken.stp.SaTokenInfo;
@@ -43,6 +44,7 @@ public class SysUserController {
 
     @PostMapping(value = "/doLogin")
     @ApiOperation("用户登录")
+    @SaIgnore
     public HttpResult doLogin(@RequestBody LoginVO loginVO) {
         // 校验
         if (BeanUtil.isEmpty(loginVO)) {

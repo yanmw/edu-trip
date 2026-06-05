@@ -1,7 +1,6 @@
 package com.cui.edu.config.satoken;
 
 import cn.dev33.satoken.interceptor.SaInterceptor;
-import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -17,29 +16,19 @@ public class SaTokenConfigure implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 注册 Sa-Token 拦截器，定义详细认证规则
-        registry.addInterceptor(new SaInterceptor(handler -> {
-            String fileRequestPattern = normalizeRequestPrefix() + "/**";
-            // 指定一条 match 规则
-            SaRouter
-                    .match("/**")    // 拦截的 path 列表，可以写多个 */
-                    .notMatch("/system/sys-user/doLogin")        // 排除掉的 path 列表，可以写多个---也可以使用@SaIgnore 注解
-                    .notMatch("/swagger-ui.html")
-                    .notMatch("/doc.html")
-                    .notMatch("/v2/api-docs")
-                    .notMatch("/swagger-resources")
-                    .notMatch("/swagger-resources/**")
-                    .notMatch("/webjars/**")
-                    .notMatch("/favicon.ico")
-                    .notMatch(fileRequestPattern)
-                    .check(r -> StpUtil.checkLogin());        // 要执行的校验动作，可以写完整的 lambda 表达式
-
-        })).addPathPatterns("/**")
-                .excludePathPatterns("/error");
-        // 注册 Sa-Token 拦截器，打开注解式鉴权功能
-        registry.addInterceptor(new SaInterceptor()).addPathPatterns("/**")
-                .excludePathPatterns("/error");
-        //我们可以使用 @SaIgnore 注解，忽略掉路由拦截认证
+        String fileRequestPattern = normalizeRequestPrefix() + "/**";
+        // 单个 Sa-Token 拦截器即可同时支持注解鉴权和登录校验；接口放行统一使用 @SaIgnore。
+        registry.addInterceptor(new SaInterceptor(handler -> StpUtil.checkLogin()))
+                .addPathPatterns("/**")
+                .excludePathPatterns("/error")
+                .excludePathPatterns("/swagger-ui.html")
+                .excludePathPatterns("/doc.html")
+                .excludePathPatterns("/v2/api-docs")
+                .excludePathPatterns("/swagger-resources")
+                .excludePathPatterns("/swagger-resources/**")
+                .excludePathPatterns("/webjars/**")
+                .excludePathPatterns("/favicon.ico")
+                .excludePathPatterns(fileRequestPattern);
     }
 
     private String normalizeRequestPrefix() {

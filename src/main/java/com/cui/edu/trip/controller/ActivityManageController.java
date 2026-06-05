@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -64,6 +65,20 @@ public class ActivityManageController {
         }
     }
 
+    @PostMapping(value = "/audit/{id}")
+    @ApiOperation(value = "活动审核")
+    public HttpResult audit(@ApiParam(value = "活动ID") @PathVariable Long id) {
+        if (ObjectUtil.isNotEmpty(id)) {
+            String errorMsg = activityManageService.auditActivity(id);
+            if (errorMsg != null) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, errorMsg);
+            }
+            return HttpResult.ok();
+        } else {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+    }
+
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "活动查询-分页")
     public HttpResult findPage(@RequestBody ActivityManageVO vo) {
@@ -88,6 +103,7 @@ public class ActivityManageController {
 
     @GetMapping(value = "/findByMuseumId/{museumId}")
     @ApiOperation(value = "根据博物馆ID查询活动列表")
+    @SaIgnore
     public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @PathVariable Long museumId) {
         if (ObjectUtil.isNotEmpty(museumId)) {
             List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId);

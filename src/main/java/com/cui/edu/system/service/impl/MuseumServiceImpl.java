@@ -38,6 +38,9 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
             if (record.getStatus() == null) {
                 record.setStatus(SysConstants.IS_TRUE);
             }
+            if (record.getIdCardVerifyEnabled() == null) {
+                record.setIdCardVerifyEnabled(SysConstants.IS_FALSE);
+            }
         }
         try {
             super.saveOrUpdate(record);

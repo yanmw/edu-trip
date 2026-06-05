@@ -47,10 +47,16 @@ public class Visitor implements Serializable {
     @ApiModelProperty(value = "微信openid")
     private String wechatOpenid;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
     @ApiModelProperty(value = "省份")
     private String province;
 
-    @ApiModelProperty(value = "男女（1：男；0：女）")
+    @ApiModelProperty(value = "城市")
+    private String city;
+
+    @ApiModelProperty(value = "性别（1：男；0：女；2：未知）")
     private Integer gender;
 
     @ApiModelProperty(value = "团队ID")
@@ -76,7 +82,11 @@ public class Visitor implements Serializable {
 
     public static final String WECHAT_OPENID = "wechat_openid";
 
+    public static final String MUSEUM_ID = "museum_id";
+
     public static final String PROVINCE = "province";
+
+    public static final String CITY = "city";
 
     public static final String GENDER = "gender";
 
@@ -85,5 +95,11 @@ public class Visitor implements Serializable {
     public static final String IS_DELETED = "is_deleted";
 
     public static final String CREATE_TIME = "create_time";
+
+    public static final Integer GENDER_MALE = 1;
+
+    public static final Integer GENDER_FEMALE = 0;
+
+    public static final Integer GENDER_UNKNOWN = 2;
 
 }

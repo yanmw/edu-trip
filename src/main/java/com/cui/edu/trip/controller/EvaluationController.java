@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -42,6 +43,7 @@ public class EvaluationController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增评价")
+    @SaIgnore
     public HttpResult save(@RequestBody Evaluation record) {
         if (BeanUtil.isNotEmpty(record)) {
             if (record.getIsDeleted() == null) {
@@ -56,6 +58,7 @@ public class EvaluationController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除评价")
+    @SaIgnore
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             evaluationService.logicDelete(records);
@@ -78,6 +81,7 @@ public class EvaluationController {
 
     @GetMapping(value = "/findByOrderId/{orderId}")
     @ApiOperation(value = "根据订单ID查询评价")
+    @SaIgnore
     public HttpResult findByOrderId(@ApiParam(value = "订单ID") @PathVariable Long orderId) {
         if (ObjectUtil.isNotEmpty(orderId)) {
             Evaluation evaluation = evaluationService.findByOrderId(orderId);

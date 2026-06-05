@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -41,6 +42,7 @@ public class TeamController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改团队")
+    @SaIgnore
     public HttpResult save(@RequestBody Team record) {
         if (BeanUtil.isNotEmpty(record)) {
             boolean saved = teamService.saveTeam(record);
@@ -56,6 +58,7 @@ public class TeamController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除团队")
+    @SaIgnore
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             teamService.logicDelete(records);
@@ -78,6 +81,7 @@ public class TeamController {
 
     @GetMapping(value = "/findByWechatOpenid/{wechatOpenid}")
     @ApiOperation(value = "根据微信openid查询团队详情")
+    @SaIgnore
     public HttpResult findByWechatOpenid(@ApiParam(value = "微信openid") @PathVariable String wechatOpenid) {
         if (ObjectUtil.isNotEmpty(wechatOpenid)) {
             Team team = teamService.findByWechatOpenid(wechatOpenid);

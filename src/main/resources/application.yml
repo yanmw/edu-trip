@@ -82,8 +82,8 @@ edu:
     request-prefix: /files # 文件访问前缀，最终访问地址为 http://host:port/files/日期/文件名
   wechat:
     mini-program:
-      app-id: '' # 微信小程序appid
-      secret: '' # 微信小程序secret
+      app-id: wxcb6a9af04c95aaab # 微信小程序appid
+      secret: 0660091f0d7f79b4abce1ceb1f96e805 # 微信小程序secret
 # 银联公共配置：开发和生产一致的配置统一维护在这里，环境差异只放到对应 profile 文件
 unionPay:
   appletAppId: 8a81c1bf76674cf6017922771025035a

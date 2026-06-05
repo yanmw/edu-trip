@@ -21,10 +21,16 @@ public class VisitorVO extends BasisVO {
     @ApiModelProperty(value = "微信openid")
     private String wechatOpenid;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
     @ApiModelProperty(value = "省份")
     private String province;
 
-    @ApiModelProperty(value = "男女（1：男；0：女）")
+    @ApiModelProperty(value = "城市")
+    private String city;
+
+    @ApiModelProperty(value = "性别（1：男；0：女；2：未知）")
     private Integer gender;
 
     @ApiModelProperty(value = "团队ID")

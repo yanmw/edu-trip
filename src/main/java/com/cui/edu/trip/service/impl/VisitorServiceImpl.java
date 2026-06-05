@@ -11,24 +11,33 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.system.entity.Museum;
+import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.trip.entity.AdministrativeDivision;
+import com.cui.edu.trip.entity.MobileNumberSegment;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.mapper.VisitorMapper;
+import com.cui.edu.trip.service.AdministrativeDivisionService;
+import com.cui.edu.trip.service.MobileNumberSegmentService;
 import com.cui.edu.trip.service.VisitorService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.vo.trip.VisitorVO;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * <p>
@@ -41,54 +50,39 @@ import java.util.Set;
 @Service
 public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> implements VisitorService {
 
-    // 身份证号码前两位对应省级行政区。
-    private static final Map<String, String> PROVINCE_MAP = new HashMap<>();
-
     private static final List<String> IMPORT_TEMPLATE_HEADERS = Arrays.asList("姓名", "手机号", "身份证号");
 
     private static final Set<String> IMPORT_REQUIRED_FIELDS = new HashSet<>(Arrays.asList("name", "mobile", "idCard"));
 
-    static {
-        PROVINCE_MAP.put("11", "北京市");
-        PROVINCE_MAP.put("12", "天津市");
-        PROVINCE_MAP.put("13", "河北省");
-        PROVINCE_MAP.put("14", "山西省");
-        PROVINCE_MAP.put("15", "内蒙古自治区");
-        PROVINCE_MAP.put("21", "辽宁省");
-        PROVINCE_MAP.put("22", "吉林省");
-        PROVINCE_MAP.put("23", "黑龙江省");
-        PROVINCE_MAP.put("31", "上海市");
-        PROVINCE_MAP.put("32", "江苏省");
-        PROVINCE_MAP.put("33", "浙江省");
-        PROVINCE_MAP.put("34", "安徽省");
-        PROVINCE_MAP.put("35", "福建省");
-        PROVINCE_MAP.put("36", "江西省");
-        PROVINCE_MAP.put("37", "山东省");
-        PROVINCE_MAP.put("41", "河南省");
-        PROVINCE_MAP.put("42", "湖北省");
-        PROVINCE_MAP.put("43", "湖南省");
-        PROVINCE_MAP.put("44", "广东省");
-        PROVINCE_MAP.put("45", "广西壮族自治区");
-        PROVINCE_MAP.put("46", "海南省");
-        PROVINCE_MAP.put("50", "重庆市");
-        PROVINCE_MAP.put("51", "四川省");
-        PROVINCE_MAP.put("52", "贵州省");
-        PROVINCE_MAP.put("53", "云南省");
-        PROVINCE_MAP.put("54", "西藏自治区");
-        PROVINCE_MAP.put("61", "陕西省");
-        PROVINCE_MAP.put("62", "甘肃省");
-        PROVINCE_MAP.put("63", "青海省");
-        PROVINCE_MAP.put("64", "宁夏回族自治区");
-        PROVINCE_MAP.put("65", "新疆维吾尔自治区");
-        PROVINCE_MAP.put("71", "台湾省");
-        PROVINCE_MAP.put("81", "香港特别行政区");
-        PROVINCE_MAP.put("82", "澳门特别行政区");
-    }
+    private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
+
+    private static final Pattern ID_CARD_15_PATTERN = Pattern.compile("^\\d{15}$");
+
+    private static final Pattern ID_CARD_18_PATTERN = Pattern.compile("^\\d{17}[0-9Xx]$");
+
+    private static final DateTimeFormatter STRICT_DATE_FORMATTER = DateTimeFormatter.ofPattern("uuuuMMdd")
+            .withResolverStyle(ResolverStyle.STRICT);
+
+    private static final int[] ID_CARD_WEIGHT = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
+
+    private static final char[] ID_CARD_CHECK_CODE = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+
+    @Autowired
+    private MuseumService museumService;
+
+    @Autowired
+    private MobileNumberSegmentService mobileNumberSegmentService;
+
+    @Autowired
+    private AdministrativeDivisionService administrativeDivisionService;
 
     @Override
     public void saveVisitor(Visitor record) {
-        // 保存游客时自动根据身份证补齐省份和性别。
-        fillProvinceAndGender(record);
+        validateMobile(record.getMobile());
+        validateIdCardFormat(record.getIdCard());
+        validateIdCardByMuseumConfig(record);
+        // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知。
+        fillProvinceCityAndGender(record);
         if (record.getId() == null && record.getIsDeleted() == null) {
             record.setIsDeleted(SysConstants.IS_FALSE);
         }
@@ -112,7 +106,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
                 visitor.setId(null);
                 visitor.setTeamId(teamId);
                 visitor.setIsDeleted(SysConstants.IS_FALSE);
-                fillProvinceAndGender(visitor);
+                validateMobile(visitor.getMobile());
+                validateIdCardFormat(visitor.getIdCard());
+                // Excel导入沿用同一套游客信息补齐规则。
+                fillProvinceCityAndGender(visitor);
             }
             super.saveBatch(visitorList);
             return visitorList.size();
@@ -148,8 +145,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (StringUtils.isNotBlank(vo.getWechatOpenid())) {
             ew.eq(Visitor.WECHAT_OPENID, vo.getWechatOpenid());
         }
+        if (vo.getMuseumId() != null) {
+            ew.eq(Visitor.MUSEUM_ID, vo.getMuseumId());
+        }
         if (StringUtils.isNotBlank(vo.getProvince())) {
             ew.eq(Visitor.PROVINCE, vo.getProvince());
+        }
+        if (StringUtils.isNotBlank(vo.getCity())) {
+            ew.eq(Visitor.CITY, vo.getCity());
         }
         if (vo.getGender() != null) {
             ew.eq(Visitor.GENDER, vo.getGender());
@@ -175,14 +178,87 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         super.updateBatchById(visitorList);
     }
 
-    private void fillProvinceAndGender(Visitor record) {
-        String idCard = record.getIdCard();
+    private void validateMobile(String mobile) {
+        if (StringUtils.isBlank(mobile)) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号不能为空");
+        }
+        if (!MOBILE_PATTERN.matcher(mobile).matches()) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号格式不正确");
+        }
+    }
+
+    private void validateIdCardFormat(String idCard) {
         if (StringUtils.isBlank(idCard)) {
             return;
         }
-        if (idCard.length() >= 2) {
-            record.setProvince(PROVINCE_MAP.get(idCard.substring(0, 2)));
+        if (ID_CARD_15_PATTERN.matcher(idCard).matches()) {
+            validateIdCardBirthDate("19" + idCard.substring(6, 12));
+            validateIdCardAddressCode(idCard.substring(0, 6));
+            return;
         }
+        if (ID_CARD_18_PATTERN.matcher(idCard).matches()) {
+            validateIdCardBirthDate(idCard.substring(6, 14));
+            validateIdCardAddressCode(idCard.substring(0, 6));
+            validateIdCardCheckCode(idCard);
+            return;
+        }
+        throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号格式不正确");
+    }
+
+    private void validateIdCardBirthDate(String birthDate) {
+        try {
+            LocalDate.parse(birthDate, STRICT_DATE_FORMATTER);
+        } catch (Exception e) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号出生日期不正确");
+        }
+    }
+
+    private void validateIdCardCheckCode(String idCard) {
+        int sum = 0;
+        for (int i = 0; i < ID_CARD_WEIGHT.length; i++) {
+            sum += (idCard.charAt(i) - '0') * ID_CARD_WEIGHT[i];
+        }
+        char expectedCheckCode = ID_CARD_CHECK_CODE[sum % 11];
+        if (Character.toUpperCase(idCard.charAt(17)) != expectedCheckCode) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号校验码不正确");
+        }
+    }
+
+    private void validateIdCardAddressCode(String addressCode) {
+        if (getAdministrativeDivision(addressCode) == null) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号地址码不正确");
+        }
+    }
+
+    private void validateIdCardByMuseumConfig(Visitor record) {
+        Visitor oldVisitor = record.getId() == null ? null : super.getById(record.getId());
+        Long museumId = record.getMuseumId() != null
+                ? record.getMuseumId()
+                : oldVisitor == null ? null : oldVisitor.getMuseumId();
+        if (museumId == null) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "博物馆ID不能为空");
+        }
+        Museum museum = museumService.getById(museumId);
+        if (museum == null) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "博物馆不存在");
+        }
+        // 未配置时按启用处理，避免老数据默认放开身份证校验。
+        boolean idCardVerifyEnabled = museum.getIdCardVerifyEnabled() == null
+                || SysConstants.IS_TRUE.equals(museum.getIdCardVerifyEnabled());
+        String idCard = record.getIdCard() == null && oldVisitor != null ? oldVisitor.getIdCard() : record.getIdCard();
+        if (idCardVerifyEnabled && StringUtils.isBlank(idCard)) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号不能为空");
+        }
+    }
+
+    private void fillProvinceCityAndGender(Visitor record) {
+        String idCard = record.getIdCard();
+        if (StringUtils.isBlank(idCard)) {
+            fillProvinceAndCityByMobile(record);
+            record.setGender(Visitor.GENDER_UNKNOWN);
+            return;
+        }
+        fillProvinceAndCityByIdCard(record, idCard);
         if (idCard.length() == 18) {
             // 18位身份证第17位为性别顺序码，奇数男、偶数女。
             setGender(record, idCard.charAt(16));
@@ -192,10 +268,56 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    private void fillProvinceAndCityByIdCard(Visitor record, String idCard) {
+        if (idCard.length() < 6) {
+            return;
+        }
+        String addressCode = idCard.substring(0, 6);
+        String provinceCode = addressCode.substring(0, 2) + "0000";
+        String cityCode = addressCode.substring(0, 4) + "00";
+        AdministrativeDivision province = getAdministrativeDivision(provinceCode);
+        AdministrativeDivision city = getAdministrativeDivision(cityCode);
+        if (province != null && StringUtils.isNotBlank(province.getName())) {
+            record.setProvince(province.getName());
+        }
+        if (city != null && StringUtils.isNotBlank(city.getName())) {
+            record.setCity(city.getName());
+        } else if (province != null && isMunicipality(province.getName())) {
+            record.setCity(province.getName());
+        }
+    }
+
     private void setGender(Visitor record, char genderCode) {
         if (genderCode >= '0' && genderCode <= '9') {
-            record.setGender((genderCode - '0') % 2 == 1 ? SysConstants.IS_TRUE : SysConstants.IS_FALSE);
+            record.setGender((genderCode - '0') % 2 == 1 ? Visitor.GENDER_MALE : Visitor.GENDER_FEMALE);
         }
+    }
+
+    private void fillProvinceAndCityByMobile(Visitor record) {
+        String mobile = record.getMobile();
+        if (StringUtils.isBlank(mobile) || mobile.length() < 7) {
+            return;
+        }
+        QueryWrapper<MobileNumberSegment> ew = new QueryWrapper<>();
+        ew.eq(MobileNumberSegment.SEGMENT, mobile.substring(0, 7));
+        MobileNumberSegment mobileNumberSegment = mobileNumberSegmentService.getOne(ew);
+        if (mobileNumberSegment != null && StringUtils.isNotBlank(mobileNumberSegment.getProvince())) {
+            record.setProvince(mobileNumberSegment.getProvince());
+        }
+        if (mobileNumberSegment != null && StringUtils.isNotBlank(mobileNumberSegment.getCity())) {
+            record.setCity(mobileNumberSegment.getCity());
+        }
+    }
+
+    private AdministrativeDivision getAdministrativeDivision(String code) {
+        QueryWrapper<AdministrativeDivision> ew = new QueryWrapper<>();
+        ew.eq(AdministrativeDivision.CODE, code);
+        return administrativeDivisionService.getOne(ew);
+    }
+
+    private boolean isMunicipality(String provinceName) {
+        return "北京市".equals(provinceName) || "天津市".equals(provinceName)
+                || "上海市".equals(provinceName) || "重庆市".equals(provinceName);
     }
 
     private void addHeaderAlias(ExcelReader reader) {

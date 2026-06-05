@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.json.JSONObject;
@@ -49,6 +50,7 @@ public class OrderController {
 
     @PostMapping(value = "/add")
     @ApiOperation(value = "添加订单")
+    @SaIgnore
     public HttpResult add(@RequestBody AppointmentVO vo, HttpServletRequest request) throws Exception {
         if (BeanUtil.isNotEmpty(vo)) {
             Map map = orderService.add(vo, request);
@@ -70,6 +72,7 @@ public class OrderController {
      */
     @PostMapping(value = "/pay/query")
     @ApiOperation(value = "主动查询并确认订单支付结果")
+    @SaIgnore
     public HttpResult payQuery(@RequestBody OrderPayQueryVO vo) throws Exception {
         if (ObjectUtil.isEmpty(vo) || ObjectUtil.isEmpty(vo.getOrderNo())) {
             return HttpResult.errorBadRequest();
@@ -123,6 +126,7 @@ public class OrderController {
 
     @PostMapping(value = "/abandon")
     @ApiOperation(value = "放弃支付")
+    @SaIgnore
     public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderNo) throws Exception {
         if (ObjectUtil.isEmpty(orderNo)) {
             return HttpResult.errorBadRequest();
@@ -135,6 +139,7 @@ public class OrderController {
     }
 
     @PostMapping(value = "/verification")
+    @SaIgnore
     @ApiOperation(value = "核销", response = JSONObject.class)
     public HttpResult verification(@RequestBody VerificationVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
@@ -157,6 +162,7 @@ public class OrderController {
      */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "根据游客openId或团队ID分页查询订单列表")
+    @SaIgnore
     public HttpResult findPage(@RequestBody OrderVO vo) {
         if (ObjectUtil.isEmpty(vo)) {
             return HttpResult.errorBadRequest();
@@ -188,6 +194,7 @@ public class OrderController {
      */
     @PostMapping(value = "/unionPayNotify")
     @ApiOperation(value = "银联支付/退款回调")
+    @SaIgnore
     public String unionPayNotify(HttpServletRequest request) {
         Map<String, String[]> map = request.getParameterMap();
         String requestString = JSON.toJSONString(map);

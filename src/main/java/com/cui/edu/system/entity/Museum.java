@@ -90,6 +90,12 @@ public class Museum implements Serializable {
     private String tid;
 
     /**
+     * 是否启用身份证验证 1：启用；0：禁用
+     */
+    @ApiModelProperty(value = "是否启用身份证验证 1：启用；0：禁用")
+    private Integer idCardVerifyEnabled;
+
+    /**
      * 状态 1：启用；0：禁用
      */
     @ApiModelProperty(value = "状态 1：启用；0：禁用")
@@ -113,4 +119,6 @@ public class Museum implements Serializable {
     public static final String MID = "mid";
 
     public static final String TID = "tid";
+
+    public static final String ID_CARD_VERIFY_ENABLED = "id_card_verify_enabled";
 }

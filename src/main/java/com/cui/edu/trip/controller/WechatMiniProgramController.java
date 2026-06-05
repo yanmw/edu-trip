@@ -1,6 +1,6 @@
 package com.cui.edu.trip.controller;
 
-import cn.hutool.core.bean.BeanUtil;
+import cn.dev33.satoken.annotation.SaIgnore;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/trip/wechat-mini-program")
 @Api(tags = "微信小程序")
+@SaIgnore
 public class WechatMiniProgramController {
 
     @Autowired

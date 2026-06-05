@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -48,6 +49,7 @@ public class VisitorController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改游客")
+    @SaIgnore
     public HttpResult save(@RequestBody Visitor record) {
         if (BeanUtil.isNotEmpty(record)) {
             visitorService.saveVisitor(record);
@@ -59,6 +61,7 @@ public class VisitorController {
 
     @PostMapping(value = "/importExcel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ApiOperation(value = "Excel导入游客")
+    @SaIgnore
     public HttpResult importExcel(@ApiParam(value = "Excel文件", required = true) @RequestParam("file") MultipartFile file,
                                   @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId) {
         if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
@@ -70,6 +73,7 @@ public class VisitorController {
 
     @GetMapping(value = "/downloadTemplate")
     @ApiOperation(value = "下载游客导入模板")
+    @SaIgnore
     public ResponseEntity<byte[]> downloadTemplate() {
         byte[] data = visitorService.getImportTemplate();
         String fileName = encodeFileName("游客导入模板.xlsx");

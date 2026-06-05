@@ -19,7 +19,7 @@ import java.util.List;
 public interface VisitorService extends IService<Visitor> {
 
     /**
-     * 保存游客；保存前根据身份证补齐省份和性别。
+     * 保存游客；保存前根据身份证或手机号补齐省市和性别。
      */
     void saveVisitor(Visitor record);
 

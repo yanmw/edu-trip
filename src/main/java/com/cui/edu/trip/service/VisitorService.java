@@ -42,4 +42,9 @@ public interface VisitorService extends IService<Visitor> {
      * 批量逻辑删除游客。
      */
     void logicDelete(List<Long> ids);
+
+    /**
+     * 根据微信openid查询未删除的游客详情。
+     */
+    Visitor findByWechatOpenid(String wechatOpenid);
 }

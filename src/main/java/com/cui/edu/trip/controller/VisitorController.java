@@ -18,6 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 
 import org.springframework.web.bind.annotation.RequestBody;
@@ -100,6 +101,18 @@ public class VisitorController {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = visitorService.findPage(vo);
             return HttpResult.ok(pageResult);
+        } else {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+    }
+
+    @GetMapping(value = "/findByWechatOpenid/{wechatOpenid}")
+    @ApiOperation(value = "根据微信openid查询游客详情")
+    @SaIgnore
+    public HttpResult findByWechatOpenid(@ApiParam(value = "微信openid") @PathVariable String wechatOpenid) {
+        if (ObjectUtil.isNotEmpty(wechatOpenid)) {
+            Visitor visitor = visitorService.findByWechatOpenid(wechatOpenid);
+            return HttpResult.ok(visitor);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }

@@ -22,6 +22,7 @@ import com.cui.edu.trip.service.MobileNumberSegmentService;
 import com.cui.edu.trip.service.VisitorService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.vo.trip.VisitorVO;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,12 +82,17 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         validateMobile(record.getMobile());
         validateIdCardFormat(record.getIdCard());
         validateIdCardByMuseumConfig(record);
+        validateWechatOpenidUnique(record);
         // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知。
         fillProvinceCityAndGender(record);
         if (record.getId() == null && record.getIsDeleted() == null) {
             record.setIsDeleted(SysConstants.IS_FALSE);
         }
-        super.saveOrUpdate(record);
+        try {
+            super.saveOrUpdate(record);
+        } catch (DuplicateKeyException e) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "微信openid已存在");
+        }
     }
 
     @Override
@@ -178,6 +184,31 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         super.updateBatchById(visitorList);
     }
 
+    @Override
+    public Visitor findByWechatOpenid(String wechatOpenid) {
+        QueryWrapper<Visitor> ew = new QueryWrapper<>();
+        ew.eq(Visitor.WECHAT_OPENID, wechatOpenid);
+        ew.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE);
+        ew.orderByDesc(Visitor.ID);
+        ew.last("limit 1");
+        return super.getOne(ew);
+    }
+
+    private void validateWechatOpenidUnique(Visitor record) {
+        if (StringUtils.isBlank(record.getWechatOpenid())) {
+            return;
+        }
+        QueryWrapper<Visitor> ew = new QueryWrapper<>();
+        ew.eq(Visitor.WECHAT_OPENID, record.getWechatOpenid());
+        ew.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE);
+        if (record.getId() != null) {
+            ew.ne(Visitor.ID, record.getId());
+        }
+        if (super.count(ew) > 0) {
+            throw new MyException(HttpStatus.SC_BAD_REQUEST, "微信openid已存在");
+        }
+    }
+
     private void validateMobile(String mobile) {
         if (StringUtils.isBlank(mobile)) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号不能为空");
@@ -225,7 +256,8 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
     }
 
     private void validateIdCardAddressCode(String addressCode) {
-        if (getAdministrativeDivision(addressCode) == null) {
+        String provinceCode = addressCode.substring(0, 2) + "0000";
+        if (getAdministrativeDivision(provinceCode) == null) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号地址码不正确");
         }
     }

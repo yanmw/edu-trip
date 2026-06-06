@@ -106,6 +106,12 @@ public class ActivityManage implements Serializable {
     @TableField(fill = FieldFill.UPDATE)
     private Long updateBy;
 
+    @ApiModelProperty(value = "联系方式")
+    private String contactNumber;
+
+    @ApiModelProperty(value = "活动分类，1：团队；2：个人")
+    private Integer participationType;
+
     // 活动场次为一对多子数据，不映射到活动主表字段。
     @TableField(exist = false)
     @ApiModelProperty(value = "活动场次")
@@ -149,5 +155,9 @@ public class ActivityManage implements Serializable {
     public static final String UPDATE_TIME = "update_time";
 
     public static final String UPDATE_BY = "update_by";
+
+    public static final String CONTACT_PHONE = "contact_number";
+
+    public static final String PARTICIPATION_TYPE = "participation_type";
 
 }

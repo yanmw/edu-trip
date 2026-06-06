@@ -31,4 +31,9 @@ public interface ActivityTypeService extends IService<ActivityType> {
      * 查询全部启用且未删除的活动类型。
      */
     List<ActivityType> findAll();
+
+    /**
+     * 查询指定博物馆的活动类型
+     */
+    List<ActivityType> findAllByMuseumId(Long museumId);
 }

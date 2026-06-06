@@ -2687,7 +2687,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     /**
      * 下单前置业务校验总入口。
      *
-     * <p>按参数完整性、游客/团队合法性、博物馆配置、活动金额一致性、场次名额逐步校验；
+     * <p>按参数完整性、活动唯一性、游客/团队合法性、博物馆配置、活动金额一致性、场次名额逐步校验；
      * 任一环节失败直接返回前端提示。</p>
      *
      * @param vo 下单参数
@@ -2696,6 +2696,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private String checkAppointment(AppointmentVO vo) {
         // 先校验基础参数，否则后续游客、团队、活动查询没有意义。
         String checkMsg = checkAppointmentParam(vo);
+        if (ObjectUtil.isNotEmpty(checkMsg)) {
+            return checkMsg;
+        }
+        // 同一订单内活动必须唯一，多个数量通过 num 表达，不允许拆成多条相同活动明细。
+        checkMsg = checkAppointmentActivityUnique(vo);
         if (ObjectUtil.isNotEmpty(checkMsg)) {
             return checkMsg;
         }
@@ -2753,6 +2758,29 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (ObjectUtil.isEmpty(vo.getList())) {
             return "下单详情不能为空";
+        }
+        return null;
+    }
+
+    /**
+     * 校验同一订单内活动是否唯一。
+     *
+     * <p>业务上一个活动可以通过 num 购买多个名额，但同一个 activityManageId
+     * 不能在 list 中重复出现，否则金额、余票和子订单拆分都会变得不清晰。</p>
+     *
+     * @param vo 下单参数
+     * @return null 表示活动不重复，否则返回前端提示
+     */
+    private String checkAppointmentActivityUnique(AppointmentVO vo) {
+        Set<Long> activityManageIds = new HashSet<>();
+        for (AppointmentVO.AppointmentDetailVO detailVO : vo.getList()) {
+            // 明细为空或活动ID为空时，交给后续 checkAppointmentDetail 返回更准确的必填提示。
+            if (ObjectUtil.isEmpty(detailVO) || ObjectUtil.isEmpty(detailVO.getActivityManageId())) {
+                continue;
+            }
+            if (!activityManageIds.add(detailVO.getActivityManageId())) {
+                return "同一个订单中活动不能重复，请合并活动数量";
+            }
         }
         return null;
     }

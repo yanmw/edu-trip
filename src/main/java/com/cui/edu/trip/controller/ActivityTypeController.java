@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -13,12 +14,7 @@ import com.cui.edu.vo.trip.ActivityTypeVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -83,6 +79,14 @@ public class ActivityTypeController {
     @ApiOperation(value = "查询全部活动类型")
     public HttpResult findAll() {
         List<ActivityType> activityTypeList = activityTypeService.findAll();
+        return HttpResult.ok(activityTypeList);
+    }
+
+    @GetMapping(value = "/findAll/{museumId}")
+    @ApiOperation(value = "查询全部活动类型")
+    @SaIgnore
+    public HttpResult findAllByMuseumId(@PathVariable Long museumId) {
+        List<ActivityType> activityTypeList = activityTypeService.findAllByMuseumId(museumId);
         return HttpResult.ok(activityTypeList);
     }
 }

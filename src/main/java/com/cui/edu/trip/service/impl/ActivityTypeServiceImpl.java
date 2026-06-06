@@ -17,10 +17,7 @@ import com.cui.edu.vo.trip.ActivityTypeVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -92,6 +89,16 @@ public class ActivityTypeServiceImpl extends ServiceImpl<ActivityTypeMapper, Act
     public List<ActivityType> findAll() {
         QueryWrapper<ActivityType> ew = new QueryWrapper<>();
         ew.eq(ActivityType.STATUS, SysConstants.IS_TRUE);
+        ew.eq(ActivityType.IS_DELETED, SysConstants.IS_FALSE);
+        ew.orderByDesc(ActivityType.ID);
+        return super.list(ew);
+    }
+
+    @Override
+    public List<ActivityType> findAllByMuseumId(Long museumId) {
+        QueryWrapper<ActivityType> ew = new QueryWrapper<>();
+        ew.eq(ActivityType.STATUS, SysConstants.IS_TRUE);
+        ew.eq(ActivityType.MUSEUM_ID, museumId);
         ew.eq(ActivityType.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityType.ID);
         return super.list(ew);

@@ -92,6 +92,7 @@ public class ActivityManageController {
 
     @GetMapping(value = "/findById/{id}")
     @ApiOperation(value = "根据ID查询活动详情")
+    @SaIgnore
     public HttpResult findById(@ApiParam(value = "主键ID") @PathVariable Long id) {
         if (ObjectUtil.isNotEmpty(id)) {
             ActivityManage activityManage = activityManageService.findById(id);

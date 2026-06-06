@@ -48,6 +48,18 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String saveActivityManage(ActivityManage record) {
+        String requiredFieldError = validateRequiredFields(record);
+        if (requiredFieldError != null) {
+            return requiredFieldError;
+        }
+        String participationTypeError = validateParticipationType(record);
+        if (participationTypeError != null) {
+            return participationTypeError;
+        }
+        String ageGroupError = validateAgeGroup(record);
+        if (ageGroupError != null) {
+            return ageGroupError;
+        }
         if (record.getId() == null) {
             // 新建活动默认禁用，必须通过审核接口启用。
             record.setStatus(SysConstants.IS_FALSE);
@@ -252,6 +264,94 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         for (ActivityManage activityManage : activityManageList) {
             activityManage.setMuseumName(museumNameMap.get(activityManage.getMuseumId()));
         }
+    }
+
+    private String validateRequiredFields(ActivityManage record) {
+        if (ObjectUtil.isEmpty(record)) {
+            return "参数有误";
+        }
+        if (StringUtils.isBlank(record.getActivityName())) {
+            return "活动名称不能为空";
+        }
+        if (ObjectUtil.isEmpty(record.getActivityTypeId())) {
+            return "活动类型不能为空";
+        }
+        if (ObjectUtil.isEmpty(record.getPrice()) || record.getPrice() < 0) {
+            return "活动单价不能为空且不能小于0";
+        }
+        if (ObjectUtil.isEmpty(record.getMuseumId())) {
+            return "博物馆ID不能为空";
+        }
+        if (StringUtils.isBlank(record.getActivityLocation())) {
+            return "活动地点不能为空";
+        }
+        if (ObjectUtil.isEmpty(record.getActivityStartDate())) {
+            return "活动开始日期不能为空";
+        }
+        if (ObjectUtil.isEmpty(record.getActivityEndDate())) {
+            return "活动结束日期不能为空";
+        }
+        if (record.getActivityStartDate().isAfter(record.getActivityEndDate())) {
+            return "活动结束日期不能早于活动开始日期";
+        }
+        if (StringUtils.isBlank(record.getApplicablePeople())) {
+            return "适用人群不能为空";
+        }
+        if (StringUtils.isBlank(record.getRegistrationNotice())) {
+            return "报名须知不能为空";
+        }
+        if (StringUtils.isBlank(record.getContactNumber())) {
+            return "联系方式不能为空";
+        }
+        return validateActivitySchedules(record.getActivityScheduleList());
+    }
+
+    private String validateActivitySchedules(List<ActivitySchedule> activityScheduleList) {
+        if (ObjectUtil.isEmpty(activityScheduleList)) {
+            return "活动场次不能为空";
+        }
+        for (int i = 0; i < activityScheduleList.size(); i++) {
+            ActivitySchedule activitySchedule = activityScheduleList.get(i);
+            String schedulePrefix = "第" + (i + 1) + "个活动场次";
+            if (ObjectUtil.isEmpty(activitySchedule)) {
+                return schedulePrefix + "不能为空";
+            }
+            if (ObjectUtil.isEmpty(activitySchedule.getStartTime())) {
+                return schedulePrefix + "开始时间不能为空";
+            }
+            if (ObjectUtil.isEmpty(activitySchedule.getEndTime())) {
+                return schedulePrefix + "结束时间不能为空";
+            }
+            if (!activitySchedule.getStartTime().isBefore(activitySchedule.getEndTime())) {
+                return schedulePrefix + "结束时间必须晚于开始时间";
+            }
+            if (ObjectUtil.isEmpty(activitySchedule.getScheduleNumber()) || activitySchedule.getScheduleNumber() <= 0) {
+                return schedulePrefix + "场次人数不能为空且必须大于0";
+            }
+        }
+        return null;
+    }
+
+    private String validateParticipationType(ActivityManage record) {
+        if (record.getParticipationType() == null) {
+            return "活动分类不能为空";
+        }
+        if (!ActivityManage.PARTICIPATION_TYPE_TEAM.equals(record.getParticipationType())
+                && !ActivityManage.PARTICIPATION_TYPE_PERSONAL.equals(record.getParticipationType())) {
+            return "活动分类参数有误";
+        }
+        return null;
+    }
+
+    private String validateAgeGroup(ActivityManage record) {
+        if (record.getAgeGroup() == null) {
+            return "年龄分类不能为空";
+        }
+        if (!ActivityManage.AGE_GROUP_ADULT.equals(record.getAgeGroup())
+                && !ActivityManage.AGE_GROUP_CHILD.equals(record.getAgeGroup())) {
+            return "年龄分类参数有误";
+        }
+        return null;
     }
 
     private String validateImmutableFields(ActivityManage oldActivityManage, ActivityManage record) {

@@ -112,6 +112,17 @@ public class ActivityManage implements Serializable {
     @ApiModelProperty(value = "活动分类，1：团队；2：个人")
     private Integer participationType;
 
+    public static final Integer PARTICIPATION_TYPE_TEAM = 1;
+
+    public static final Integer PARTICIPATION_TYPE_PERSONAL = 2;
+
+    @ApiModelProperty(value = "年龄分类，1：成人；2：儿童")
+    private Integer ageGroup;
+
+    public static final Integer AGE_GROUP_ADULT = 1;
+
+    public static final Integer AGE_GROUP_CHILD = 2;
+
     // 活动场次为一对多子数据，不映射到活动主表字段。
     @TableField(exist = false)
     @ApiModelProperty(value = "活动场次")
@@ -160,4 +171,5 @@ public class ActivityManage implements Serializable {
 
     public static final String PARTICIPATION_TYPE = "participation_type";
 
+    public static final String AGE_GROUP = "age_group";
 }

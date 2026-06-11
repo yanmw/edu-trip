@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -102,12 +103,14 @@ public class ActivityManageController {
         }
     }
 
-    @GetMapping(value = "/findByMuseumId/{museumId}")
+    @GetMapping(value = "/findByMuseumId")
     @ApiOperation(value = "根据博物馆ID查询活动列表")
     @SaIgnore
-    public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @PathVariable Long museumId) {
+    public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @RequestParam Long museumId,
+                                     @ApiParam(value = "活动分类，1：团队；2：个人")
+                                     @RequestParam(required = false) Integer participationType) {
         if (ObjectUtil.isNotEmpty(museumId)) {
-            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId);
+            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType);
             return HttpResult.ok(activityManageList);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");

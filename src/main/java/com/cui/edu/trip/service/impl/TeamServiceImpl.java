@@ -31,6 +31,9 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team> implements Te
     @Override
     public boolean saveTeam(Team record) {
         if (record.getId() == null) {
+            if (restoreDeletedTeam(record)) {
+                return true;
+            }
             // 新增时先做业务校验，避免同一个微信用户重复创建团队。
             if (StringUtils.isNotBlank(record.getWechatOpenid()) && existByWechatOpenid(record.getWechatOpenid())) {
                 return false;
@@ -97,5 +100,28 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team> implements Te
         ew.eq(Team.WECHAT_OPENID, wechatOpenid);
         ew.eq(Team.IS_DELETED, SysConstants.IS_FALSE);
         return super.count(ew) > 0;
+    }
+
+    private boolean restoreDeletedTeam(Team record) {
+        if (StringUtils.isBlank(record.getWechatOpenid())) {
+            return false;
+        }
+        Team deletedTeam = findDeletedByWechatOpenid(record.getWechatOpenid());
+        if (deletedTeam == null) {
+            return false;
+        }
+        record.setId(deletedTeam.getId());
+        record.setIsDeleted(SysConstants.IS_FALSE);
+        super.updateById(record);
+        return true;
+    }
+
+    private Team findDeletedByWechatOpenid(String wechatOpenid) {
+        QueryWrapper<Team> ew = new QueryWrapper<>();
+        ew.eq(Team.WECHAT_OPENID, wechatOpenid);
+        ew.eq(Team.IS_DELETED, SysConstants.IS_TRUE);
+        ew.orderByDesc(Team.ID);
+        ew.last("limit 1");
+        return super.getOne(ew);
     }
 }

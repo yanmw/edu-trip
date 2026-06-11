@@ -33,7 +33,6 @@ public class WechatMiniProgramController {
         if (StringUtils.isBlank(code)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
-
         WechatOpenidResultVO result = wechatMiniProgramService.getOpenid(code);
         if (!result.isSuccess()) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, result.getMessage());

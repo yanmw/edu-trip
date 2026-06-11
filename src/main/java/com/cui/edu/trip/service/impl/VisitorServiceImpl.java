@@ -88,6 +88,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (record.getId() == null && record.getIsDeleted() == null) {
             record.setIsDeleted(SysConstants.IS_FALSE);
         }
+        if (record.getId() == null && restoreDeletedVisitor(record)) {
+            return;
+        }
         try {
             super.saveOrUpdate(record);
         } catch (DuplicateKeyException e) {
@@ -207,6 +210,29 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (super.count(ew) > 0) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "微信openid已存在");
         }
+    }
+
+    private boolean restoreDeletedVisitor(Visitor record) {
+        if (StringUtils.isBlank(record.getWechatOpenid())) {
+            return false;
+        }
+        Visitor deletedVisitor = findDeletedByWechatOpenid(record.getWechatOpenid());
+        if (deletedVisitor == null) {
+            return false;
+        }
+        record.setId(deletedVisitor.getId());
+        record.setIsDeleted(SysConstants.IS_FALSE);
+        super.updateById(record);
+        return true;
+    }
+
+    private Visitor findDeletedByWechatOpenid(String wechatOpenid) {
+        QueryWrapper<Visitor> ew = new QueryWrapper<>();
+        ew.eq(Visitor.WECHAT_OPENID, wechatOpenid);
+        ew.eq(Visitor.IS_DELETED, SysConstants.IS_TRUE);
+        ew.orderByDesc(Visitor.ID);
+        ew.last("limit 1");
+        return super.getOne(ew);
     }
 
     private void validateMobile(String mobile) {

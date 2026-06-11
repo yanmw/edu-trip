@@ -10,6 +10,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.Museum;
+import com.cui.edu.system.service.MuseumSaveResult;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.vo.system.MuseumVO;
 import io.swagger.annotations.Api;
@@ -43,8 +44,11 @@ public class MuseumController {
             if (record.getId() == null && (StringUtils.isBlank(record.getName()) || StringUtils.isBlank(record.getMid()))) {
                 return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
             }
-            boolean saved = museumService.saveMuseum(record);
-            if (!saved) {
+            MuseumSaveResult saveResult = museumService.saveMuseum(record);
+            if (MuseumSaveResult.DUPLICATE_NAME.equals(saveResult)) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "博物馆名称已存在");
+            }
+            if (MuseumSaveResult.DUPLICATE_MID.equals(saveResult)) {
                 // mid存在数据库唯一约束，重复时作为业务校验结果返回给前端。
                 return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "mid已存在");
             }

@@ -1,14 +1,10 @@
 package com.cui.edu.trip.entity;
 
 
+import com.baomidou.mybatisplus.annotation.*;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.math.BigDecimal;
-
-import com.baomidou.mybatisplus.annotation.FieldFill;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,6 +28,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = false)
 @ApiModel(value = "Order对象", description = "订单表")
+@TableName("`order`")
 public class Order implements Serializable {
 
     private static final long serialVersionUID = 1L;

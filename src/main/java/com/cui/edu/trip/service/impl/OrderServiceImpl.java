@@ -1617,17 +1617,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult(checkMsg);
         }
 
-        // 第二步：查询订单。这里只查未删除订单，避免已删除订单被继续核销。
+        // 第二步：校验博物馆是否存在且可用，防止无效博物馆 ID 继续核销。
+        checkMsg = checkVerificationMuseum(vo);
+        if (ObjectUtil.isNotEmpty(checkMsg)) {
+            saveVerificationFailLog(null, vo.getOrderNo(), checkMsg);
+            return msgResult(checkMsg);
+        }
+
+        // 第三步：查询订单。这里只查未删除订单，避免已删除订单被继续核销。
         Order order = getOrderByOrderNo(vo.getOrderNo());
 
-        // 第三步：校验订单归属、订单状态和是否已使用。
+        // 第四步：校验订单归属、订单状态、预约日期和是否已使用。
         checkMsg = checkVerificationOrder(order, vo);
         if (ObjectUtil.isNotEmpty(checkMsg)) {
             saveVerificationFailLog(order, vo.getOrderNo(), checkMsg);
             return msgResult(checkMsg);
         }
 
-        // 第四步：核销订单。当前订单表只有主订单使用状态，核销时更新主订单为已使用。
+        // 第五步：校验子订单状态，避免主订单数据异常时误核销退款中或未支付的子订单。
+        checkMsg = checkVerificationDetails(order);
+        if (ObjectUtil.isNotEmpty(checkMsg)) {
+            saveVerificationFailLog(order, vo.getOrderNo(), checkMsg);
+            return msgResult(checkMsg);
+        }
+
+        // 第六步：核销订单。当前订单表只有主订单使用状态，核销时更新主订单为已使用。
         Integer beforeIsUsed = order.getIsUsed();
         markOrderUsed(order);
         saveVerificationSuccessLog(order, beforeIsUsed);
@@ -1901,6 +1915,25 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isEmpty(vo.getMuseumId())) {
             return "博物馆ID不能为空";
         }
+        try {
+            Long.valueOf(vo.getMuseumId());
+        } catch (NumberFormatException e) {
+            return "博物馆ID格式有误";
+        }
+        return null;
+    }
+
+    /**
+     * 校验核销入口传入的博物馆是否可用。
+     *
+     * @param vo 核销参数
+     * @return null 表示校验通过，否则返回前端提示
+     */
+    private String checkVerificationMuseum(VerificationVO vo) {
+        Museum museum = museumService.getById(Long.valueOf(vo.getMuseumId()));
+        if (ObjectUtil.isEmpty(museum) || !SysConstants.IS_TRUE.equals(museum.getStatus())) {
+            return "博物馆不存在或已禁用";
+        }
         return null;
     }
 
@@ -1915,14 +1948,66 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isEmpty(order)) {
             return "订单不存在";
         }
-        if (ObjectUtil.isEmpty(order.getMuseumId()) || !String.valueOf(order.getMuseumId()).equals(vo.getMuseumId())) {
+        Long museumId = Long.valueOf(vo.getMuseumId());
+        if (ObjectUtil.isEmpty(order.getMuseumId()) || !order.getMuseumId().equals(museumId)) {
             return "订单不属于当前博物馆，无法核销";
+        }
+        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
+            return "订单已核销，请勿重复操作";
+        }
+        if (ObjectUtil.isEmpty(order.getAppointmentDate())) {
+            return "订单预约日期异常，无法核销";
+        }
+        if (order.getAppointmentDate().isAfter(LocalDate.now())) {
+            return "预约日期未到，无法核销";
+        }
+        if (order.getAppointmentDate().isBefore(LocalDate.now())) {
+            return "预约日期已过期，无法核销";
+        }
+        if (Order.OrderStatusEnum.PAYING.getValue().equals(order.getOrderStatus())) {
+            return "订单未支付，无法核销";
+        }
+        if (Order.OrderStatusEnum.ABANDON.getValue().equals(order.getOrderStatus())) {
+            return "订单已放弃支付，无法核销";
+        }
+        if (Order.OrderStatusEnum.REFUNDING.getValue().equals(order.getOrderStatus())) {
+            return "订单退款中，无法核销";
+        }
+        if (Order.OrderStatusEnum.PARTIAL_REFUND.getValue().equals(order.getOrderStatus())
+                || Order.OrderStatusEnum.ALL_REFUND.getValue().equals(order.getOrderStatus())) {
+            return "订单已发生退款，无法核销";
         }
         if (!Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
             return "订单状态不允许核销";
         }
-        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
-            return "订单已核销，请勿重复操作";
+        return null;
+    }
+
+    /**
+     * 校验订单子订单是否都允许核销。
+     *
+     * <p>核销虽然只更新主订单 isUsed，但子订单才代表实际购买的活动名额；
+     * 如果子订单缺失、数量异常或存在非支付成功状态，说明订单数据不完整，不能核销。</p>
+     *
+     * @param order 主订单
+     * @return null 表示校验通过，否则返回前端提示
+     */
+    private String checkVerificationDetails(Order order) {
+        List<OrderDetail> orderDetailList = getOrderDetails(order.getOrderNo());
+        if (ObjectUtil.isEmpty(orderDetailList)) {
+            return "订单子订单不存在，无法核销";
+        }
+        if (ObjectUtil.isNotEmpty(order.getOrderQuantity()) && orderDetailList.size() != order.getOrderQuantity()) {
+            return "订单子订单数量异常，无法核销";
+        }
+        for (OrderDetail orderDetail : orderDetailList) {
+            if (OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue().equals(orderDetail.getOrderStatus())
+                    || OrderDetail.OrderDetailStatusEnum.REFUND.getValue().equals(orderDetail.getOrderStatus())) {
+                return "存在退款中或已退款的子订单，无法核销";
+            }
+            if (!OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue().equals(orderDetail.getOrderStatus())) {
+                return "存在未支付成功的子订单，无法核销";
+            }
         }
         return null;
     }

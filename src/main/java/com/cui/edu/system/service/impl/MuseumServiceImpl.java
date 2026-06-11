@@ -9,6 +9,7 @@ import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.mapper.MuseumMapper;
+import com.cui.edu.system.service.MuseumSaveResult;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.vo.system.MuseumVO;
 import org.springframework.dao.DuplicateKeyException;
@@ -29,11 +30,14 @@ import java.util.List;
 public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> implements MuseumService {
 
     @Override
-    public boolean saveMuseum(Museum record) {
+    public MuseumSaveResult saveMuseum(Museum record) {
+        if (StringUtils.isNotBlank(record.getName()) && existByName(record.getName(), record.getId())) {
+            return MuseumSaveResult.DUPLICATE_NAME;
+        }
         if (record.getId() == null) {
             // mid为银联商户号，同一个商户号不允许重复创建博物馆。
             if (StringUtils.isNotBlank(record.getMid()) && existByMid(record.getMid())) {
-                return false;
+                return MuseumSaveResult.DUPLICATE_MID;
             }
             if (record.getStatus() == null) {
                 record.setStatus(SysConstants.IS_TRUE);
@@ -44,10 +48,10 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
         }
         try {
             super.saveOrUpdate(record);
-            return true;
+            return MuseumSaveResult.SUCCESS;
         } catch (DuplicateKeyException e) {
             // 数据库唯一约束兜底，避免并发新增时绕过前置查询。
-            return false;
+            return MuseumSaveResult.DUPLICATE_MID;
         }
     }
 
@@ -79,6 +83,15 @@ public class MuseumServiceImpl extends ServiceImpl<MuseumMapper, Museum> impleme
     private boolean existByMid(String mid) {
         QueryWrapper<Museum> ew = new QueryWrapper<>();
         ew.eq(Museum.MID, mid);
+        return super.count(ew) > 0;
+    }
+
+    private boolean existByName(String name, Long id) {
+        QueryWrapper<Museum> ew = new QueryWrapper<>();
+        ew.eq(Museum.NAME, name);
+        if (id != null) {
+            ew.ne(Museum.ID, id);
+        }
         return super.count(ew) > 0;
     }
 }

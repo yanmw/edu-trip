@@ -18,9 +18,9 @@ import java.util.List;
 public interface MuseumService extends IService<Museum> {
 
     /**
-     * 保存博物馆；新增时mid重复则返回false。
+     * 保存博物馆；名称或新增mid重复时返回对应业务校验结果。
      */
-    boolean saveMuseum(Museum record);
+    MuseumSaveResult saveMuseum(Museum record);
 
     /**
      * 博物馆分页查询

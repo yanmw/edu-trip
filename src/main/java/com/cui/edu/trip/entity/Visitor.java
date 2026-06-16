@@ -62,6 +62,9 @@ public class Visitor implements Serializable {
     @ApiModelProperty(value = "团队ID")
     private Long teamId;
 
+    @ApiModelProperty(value = "游客批次号")
+    private String batchNo;
+
     @ApiModelProperty(value = "是否删除")
     private Integer isDeleted;
 
@@ -91,6 +94,8 @@ public class Visitor implements Serializable {
     public static final String GENDER = "gender";
 
     public static final String TEAM_ID = "team_id";
+
+    public static final String BATCH_NO = "batch_no";
 
     public static final String IS_DELETED = "is_deleted";
 

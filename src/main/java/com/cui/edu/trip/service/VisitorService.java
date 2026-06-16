@@ -26,7 +26,7 @@ public interface VisitorService extends IService<Visitor> {
     /**
      * 导入游客Excel，并为导入数据统一设置团队ID。
      */
-    int importExcel(MultipartFile file, Long teamId);
+    int importExcel(MultipartFile file, Long teamId, String batchNo);
 
     /**
      * 生成游客导入模板。
@@ -47,4 +47,9 @@ public interface VisitorService extends IService<Visitor> {
      * 根据微信openid查询未删除的游客详情。
      */
     Visitor findByWechatOpenid(String wechatOpenid);
+
+    /**
+     * 根据团队ID和批次号查询未删除的游客列表。
+     */
+    List<Visitor> findByTeamId(Long teamId, String batchNo);
 }

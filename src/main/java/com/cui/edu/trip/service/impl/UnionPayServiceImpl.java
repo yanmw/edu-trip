@@ -10,7 +10,6 @@ import com.cui.edu.trip.entity.unionpay.AppletRefundBody;
 import com.cui.edu.trip.entity.unionpay.AppletRefundQueryBody;
 import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.util.DateTimeUtils;
-import com.cui.edu.util.TextCodeGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.http.HttpEntity;
@@ -22,25 +21,25 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PreDestroy;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.StringJoiner;
 import java.util.TreeMap;
+import java.util.UUID;
 
 @Service
 @Slf4j
 public class UnionPayServiceImpl implements UnionPayService {
-
-    @Autowired
-    private TextCodeGenerator textCodeGenerator;
 
     @Value("${unionPay.appletAppId}")
     private String appletAppId;
@@ -71,16 +70,6 @@ public class UnionPayServiceImpl implements UnionPayService {
 
     @Value("${unionPay.aliPayAppletPayUrl:https://api-mop.chinaums.com/v1/netpay/trade/create}")
     private String aliPayAppletPayUrl;
-
-    @Value("${unionPay.tokenUrl:https://api-mop.chinaums.com/v1/token/access}")
-    private String tokenUrl;
-
-    @Value("${unionPay.accessTokenExpireSeconds:300}")
-    private long accessTokenExpireSeconds;
-
-    private volatile String cachedAuthorization;
-
-    private volatile long cachedAuthorizationExpireAt;
 
     // === 连接池配置 ===
     private static final int MAX_TOTAL_CONNECTIONS = 200;        // 最大总连接数
@@ -293,7 +282,8 @@ public class UnionPayServiceImpl implements UnionPayService {
     }
 
     private JSONObject postUnionPay(String url, String entity, String operationName) throws Exception {
-        String send = send(url, entity, getToken());
+        // 银联业务接口使用 OPEN-BODY-SIG：签名必须绑定本次请求体，避免拉起支付时认证失败。
+        String send = send(url, entity, buildOpenBodySigAuthorization(entity));
         log.info("{}返回报文json：{}", operationName, send);
         return JSONObject.parseObject(send);
     }
@@ -304,7 +294,9 @@ public class UnionPayServiceImpl implements UnionPayService {
     public String send(String url, String entity, String authorization) throws Exception {
         HttpPost post = new HttpPost(url);
         post.addHeader("Authorization", authorization);
-        post.setEntity(new StringEntity(entity, "application/json", "UTF-8"));
+        StringEntity requestEntity = new StringEntity(entity, StandardCharsets.UTF_8);
+        requestEntity.setContentType("application/json");
+        post.setEntity(requestEntity);
 
         try (CloseableHttpResponse response = HTTP_CLIENT.execute(post)) {
             int statusCode = response.getStatusLine().getStatusCode();
@@ -318,66 +310,46 @@ public class UnionPayServiceImpl implements UnionPayService {
         }
     }
 
-    public String getToken() {
-        long now = System.currentTimeMillis();
-        if (cachedAuthorization != null && now < cachedAuthorizationExpireAt) {
-            return cachedAuthorization;
+    /**
+     * 构建银联开放平台业务请求的 Authorization 认证头。
+     *
+     * <p>银联小程序支付示例的 OPEN-BODY-SIG 规则：
+     * 1. 对原始 JSON 请求体按 UTF-8 做 SHA256 摘要，得到 bodyDigest；
+     * 2. 按 appId + timestamp + nonce + bodyDigest 拼接待签名串；
+     * 3. 使用 appKey 做 HmacSHA256 签名并 Base64 编码；
+     * 4. 将 AppId、Timestamp、Nonce、Signature 放入 Authorization。</p>
+     */
+    private String buildOpenBodySigAuthorization(String body) throws Exception {
+        if (appletAppId == null || appletAppId.trim().isEmpty()
+                || appletAppKey == null || appletAppKey.trim().isEmpty()) {
+            throw new RuntimeException("银联OPEN-BODY-SIG认证参数缺失，请检查unionPay.appletAppId和unionPay.appletAppKey配置");
         }
-        synchronized (this) {
-            now = System.currentTimeMillis();
-            if (cachedAuthorization != null && now < cachedAuthorizationExpireAt) {
-                return cachedAuthorization;
-            }
-            JSONObject jsonObject = new JSONObject();
-            SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss");
-            String timestamp = format.format(new Date());
-            String nonce = textCodeGenerator.generate();
-            String all = appletAppId + timestamp + nonce + appletAppKey;
-            String signature = DigestUtils.sha256Hex(all.getBytes(StandardCharsets.UTF_8));
-            jsonObject.put("appId", appletAppId);
-            jsonObject.put("timestamp", timestamp);
-            jsonObject.put("nonce", nonce);
-            jsonObject.put("signature", signature);
-            jsonObject.put("signMethod", "SHA256");
-            log.info("获取银联AccessToken请求：appId={}，timestamp={}，nonce={}", appletAppId, timestamp, nonce);
-            JSONObject response = doPost(tokenUrl, jsonObject);
-            String accessToken = response.getString("accessToken");
-            if (accessToken == null || accessToken.trim().isEmpty()) {
-                throw new RuntimeException("获取银联AccessToken失败：" + response);
-            }
-            cachedAuthorization = "OPEN-ACCESS-TOKEN AccessToken=" + accessToken;
-            // 文档未在本段说明token有效期，保守短缓存，避免每笔交易都请求token。
-            cachedAuthorizationExpireAt = now + Math.max(60, accessTokenExpireSeconds) * 1000;
-            return cachedAuthorization;
-        }
+
+        String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        String nonce = UUID.randomUUID().toString().replace("-", "");
+        String requestBody = body == null ? "" : body;
+
+        // bodyDigest 必须和实际发送的 JSON 字符串完全一致，否则银联侧会验签失败。
+        String bodyDigest = DigestUtils.sha256Hex(requestBody.getBytes(StandardCharsets.UTF_8));
+        String waitSign = appletAppId + timestamp + nonce + bodyDigest;
+        String signature = hmacSha256Base64(waitSign, appletAppKey);
+
+        log.info("银联OPEN-BODY-SIG认证参数：appId={}，timestamp={}，nonce={}，bodyDigest={}",
+                appletAppId, timestamp, nonce, bodyDigest);
+        return "OPEN-BODY-SIG AppId=\"" + appletAppId
+                + "\", Timestamp=\"" + timestamp
+                + "\", Nonce=\"" + nonce
+                + "\", Signature=\"" + signature + "\"";
     }
 
-    private JSONObject doPost(String url, JSONObject json) {
-        HttpPost post = new HttpPost(url);
-
-        try {
-            StringEntity entity = new StringEntity(json.toString(), StandardCharsets.UTF_8);
-            entity.setContentType("application/json");
-            post.setEntity(entity);
-
-            try (CloseableHttpResponse response = HTTP_CLIENT.execute(post)) {
-                int statusCode = response.getStatusLine().getStatusCode();
-                HttpEntity responseEntity = response.getEntity();
-                String result = responseEntity == null ? "" : EntityUtils.toString(responseEntity, StandardCharsets.UTF_8);
-
-                if (statusCode >= 200 && statusCode < 300) {
-                    return JSONObject.parseObject(result);
-                }
-                log.error("HTTP请求失败: {} - {}", statusCode, result);
-                throw new RuntimeException("HTTP请求失败: " + statusCode + " - " + result);
-            }
-        } catch (IOException e) {
-            log.error("HTTP请求IO异常: {}", e.getMessage(), e);
-            throw new RuntimeException("HTTP请求失败: " + e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("HTTP请求处理异常: {}", e.getMessage(), e);
-            throw new RuntimeException("HTTP请求处理失败: " + e.getMessage(), e);
-        }
+    /**
+     * 使用 HmacSHA256 对待签名串签名，并按银联示例要求转成 Base64 字符串。
+     */
+    private String hmacSha256Base64(String content, String key) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] signatureBytes = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
+        return Base64.getEncoder().encodeToString(signatureBytes);
     }
 
     private void ensureUnionPaySuccess(String operationName, JSONObject jsonObject) {

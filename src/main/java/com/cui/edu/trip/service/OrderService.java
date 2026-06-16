@@ -132,4 +132,20 @@ public interface OrderService extends IService<Order> {
      * @return 分页订单列表，每条订单包含子订单集合及相关表信息
      */
     PageResult findPage(OrderVO vo);
+
+    /**
+     * 管理端分页查询所有订单，并附带子订单和关联表信息。
+     *
+     * @param vo 订单分页查询参数，可按订单号、博物馆、状态、团队、游客等条件筛选
+     * @return 分页订单列表，每条订单包含子订单集合及相关表信息
+     */
+    PageResult findAdminPage(OrderVO vo);
+
+    /**
+     * 根据订单编号查询订单详情。
+     *
+     * @param orderNo 订单编号
+     * @return 订单详情，包含子订单集合及相关表信息；不存在时返回 null
+     */
+    Order findByOrderNo(String orderNo);
 }

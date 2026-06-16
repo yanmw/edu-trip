@@ -99,7 +99,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
     }
 
     @Override
-    public int importExcel(MultipartFile file, Long teamId) {
+    public int importExcel(MultipartFile file, Long teamId, String batchNo) {
         if (file == null || file.isEmpty()) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "导入文件不能为空");
         }
@@ -114,6 +114,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             for (Visitor visitor : visitorList) {
                 visitor.setId(null);
                 visitor.setTeamId(teamId);
+                visitor.setBatchNo(batchNo);
                 visitor.setIsDeleted(SysConstants.IS_FALSE);
                 validateMobile(visitor.getMobile());
                 validateIdCardFormat(visitor.getIdCard());
@@ -132,7 +133,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         try (ExcelWriter writer = ExcelUtil.getWriter(true)) {
             writer.writeHeadRow(IMPORT_TEMPLATE_HEADERS);
-            writer.autoSizeColumnAll();
+            writer.setColumnWidth(0, 12);
+            writer.setColumnWidth(1, 18);
+            writer.setColumnWidth(2, 24);
             writer.flush(outputStream, true);
         }
         return outputStream.toByteArray();
@@ -169,6 +172,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (vo.getTeamId() != null) {
             ew.eq(Visitor.TEAM_ID, vo.getTeamId());
         }
+        if (StringUtils.isNotBlank(vo.getBatchNo())) {
+            ew.eq(Visitor.BATCH_NO, vo.getBatchNo());
+        }
         ew.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(Visitor.ID);
         page = super.page(page, ew);
@@ -195,6 +201,18 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         ew.orderByDesc(Visitor.ID);
         ew.last("limit 1");
         return super.getOne(ew);
+    }
+
+    @Override
+    public List<Visitor> findByTeamId(Long teamId, String batchNo) {
+        QueryWrapper<Visitor> ew = new QueryWrapper<>();
+        ew.eq(Visitor.TEAM_ID, teamId);
+        if (StringUtils.isNotBlank(batchNo)) {
+            ew.eq(Visitor.BATCH_NO, batchNo);
+        }
+        ew.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE);
+        ew.orderByDesc(Visitor.ID);
+        return super.list(ew);
     }
 
     private void validateWechatOpenidUnique(Visitor record) {
@@ -317,6 +335,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             return;
         }
         fillProvinceAndCityByIdCard(record, idCard);
+        fillMissingProvinceAndCityByMobile(record);
         if (idCard.length() == 18) {
             // 18位身份证第17位为性别顺序码，奇数男、偶数女。
             setGender(record, idCard.charAt(16));
@@ -342,6 +361,25 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             record.setCity(city.getName());
         } else if (province != null && isMunicipality(province.getName())) {
             record.setCity(province.getName());
+        }
+    }
+
+    private void fillMissingProvinceAndCityByMobile(Visitor record) {
+        String mobile = record.getMobile();
+        if (StringUtils.isBlank(mobile) || mobile.length() < 7) {
+            return;
+        }
+        QueryWrapper<MobileNumberSegment> ew = new QueryWrapper<>();
+        ew.eq(MobileNumberSegment.SEGMENT, mobile.substring(0, 7));
+        MobileNumberSegment mobileNumberSegment = mobileNumberSegmentService.getOne(ew);
+        if (mobileNumberSegment == null) {
+            return;
+        }
+        if (StringUtils.isBlank(record.getProvince()) && StringUtils.isNotBlank(mobileNumberSegment.getProvince())) {
+            record.setProvince(mobileNumberSegment.getProvince());
+        }
+        if (StringUtils.isBlank(record.getCity()) && StringUtils.isNotBlank(mobileNumberSegment.getCity())) {
+            record.setCity(mobileNumberSegment.getCity());
         }
     }
 

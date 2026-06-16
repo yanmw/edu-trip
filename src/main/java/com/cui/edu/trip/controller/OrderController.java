@@ -94,7 +94,7 @@ public class OrderController {
         }
     }
 
-    @PostMapping(value = "/refundAll")
+    @GetMapping(value = "/refundAll")
     @ApiOperation(value = "管理员退全款")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
     public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderNo,
@@ -124,7 +124,7 @@ public class OrderController {
         }
     }
 
-    @PostMapping(value = "/abandon")
+    @GetMapping(value = "/abandon")
     @ApiOperation(value = "放弃支付")
     @SaIgnore
     public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderNo) throws Exception {
@@ -170,11 +170,51 @@ public class OrderController {
         if (ObjectUtil.isEmpty(vo.getOpenId()) && ObjectUtil.isEmpty(vo.getTeamId())) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "游客openId和团队ID至少填写一个");
         }
-        if (ObjectUtil.isEmpty(vo.getPageNum()) || ObjectUtil.isEmpty(vo.getPageSize()) || vo.getPageNum() <= 0 || vo.getPageSize() <= 0) {
+        if (isInvalidPageParam(vo)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "分页参数必须大于0");
         }
         PageResult pageResult = orderService.findPage(vo);
         return HttpResult.ok(pageResult);
+    }
+
+    /**
+     * 管理端分页查询所有订单。
+     *
+     * <p>该接口不要求 openId 或 teamId，默认分页查询所有未删除订单；
+     * 可通过订单号、博物馆、订单状态、订单类型、是否核销、游客ID、团队ID、预约日期做筛选。
+     * 返回结构与游客/团队订单列表一致，包含主订单、detailList 子订单及关联表信息。</p>
+     */
+    @PostMapping(value = "/findAdminPage")
+    @ApiOperation(value = "管理端分页查询所有订单")
+    public HttpResult findAdminPage(@RequestBody OrderVO vo) {
+        if (ObjectUtil.isEmpty(vo)) {
+            return HttpResult.errorBadRequest();
+        }
+        if (isInvalidPageParam(vo)) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "分页参数必须大于0");
+        }
+        PageResult pageResult = orderService.findAdminPage(vo);
+        return HttpResult.ok(pageResult);
+    }
+
+    /**
+     * 根据订单编号查询订单详情。
+     *
+     * <p>返回主订单基础信息、detailList 子订单集合，并补充博物馆、游客、团队、活动和场次信息。
+     * 这里只查询未删除订单，避免后台误展示已逻辑删除的数据。</p>
+     */
+    @GetMapping(value ="/findByOrderNo/{orderNo}")
+    @ApiOperation(value = "根据订单编号查询订单详情")
+    @SaIgnore
+    public HttpResult findByOrderNo(@ApiParam(value = "订单编号") @PathVariable String orderNo) {
+        if (ObjectUtil.isEmpty(orderNo)) {
+            return HttpResult.errorBadRequest();
+        }
+        Order order = orderService.findByOrderNo(orderNo);
+        if (ObjectUtil.isEmpty(order)) {
+            return HttpResult.error(HttpStatus.SC_MY_ERROR, "订单不存在");
+        }
+        return HttpResult.ok(order);
     }
 
     /**
@@ -231,6 +271,11 @@ public class OrderController {
             return null;
         }
         return Integer.valueOf(value);
+    }
+
+    private boolean isInvalidPageParam(OrderVO vo) {
+        return ObjectUtil.isEmpty(vo.getPageNum()) || ObjectUtil.isEmpty(vo.getPageSize())
+                || vo.getPageNum() <= 0 || vo.getPageSize() <= 0;
     }
 
 }

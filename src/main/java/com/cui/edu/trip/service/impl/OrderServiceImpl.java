@@ -1,6 +1,7 @@
 package com.cui.edu.trip.service.impl;
 
 import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -1679,6 +1680,55 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
+     * 管理端分页查询所有订单。
+     *
+     * <p>管理端不限制游客 openId 或团队 ID，默认查询所有未删除订单；
+     * 如果前端传入筛选条件，则按订单号、博物馆、订单状态等条件进一步过滤。
+     * 查出当前页主订单后，复用游客/团队列表的子订单和关联表补充逻辑。</p>
+     *
+     * @param vo 订单分页查询参数
+     * @return 分页订单列表，每条订单包含子订单集合及相关表信息
+     */
+    @Override
+    public PageResult findAdminPage(OrderVO vo) {
+        // 第一步：管理端直接分页查主订单，不强制要求 openId 或 teamId。
+        Page<Order> page = findAdminOrderPage(vo);
+        if (page.getRecords().isEmpty()) {
+            return PageResultUtil.getPageResult(page);
+        }
+
+        // 第二步：只给当前页订单批量补充子订单，避免后台全量查询拖垮数据库。
+        fillOrderDetailList(page.getRecords());
+        // 第三步：批量补充博物馆、游客、团队、活动、场次等关联表信息。
+        fillOrderRelationInfo(page.getRecords());
+        return PageResultUtil.getPageResult(page);
+    }
+
+    /**
+     * 根据订单编号查询订单详情。
+     *
+     * <p>详情接口与列表接口保持同一返回结构：主订单对象中直接带 detailList，
+     * 同时补充主订单和子订单涉及的博物馆、游客、团队、活动、场次对象。</p>
+     *
+     * @param orderNo 订单编号
+     * @return 订单详情；订单不存在或已删除时返回 null
+     */
+    @Override
+    public Order findByOrderNo(String orderNo) {
+        // 第一步：订单编号是前后端业务流转字段，按订单编号查询未删除主订单。
+        Order order = getOrderByOrderNo(orderNo);
+        if (ObjectUtil.isEmpty(order)) {
+            return null;
+        }
+
+        // 第二步：复用列表页填充逻辑，保证详情页的字段结构和列表页一致。
+        List<Order> orderList = Collections.singletonList(order);
+        fillOrderDetailList(orderList);
+        fillOrderRelationInfo(orderList);
+        return order;
+    }
+
+    /**
      * 根据游客微信 openId 查询游客 ID。
      *
      * @param openId 游客微信 openId
@@ -1722,6 +1772,58 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         });
         orderWrapper.orderByDesc(Order.ID);
         return super.page(page, orderWrapper);
+    }
+
+    /**
+     * 管理端分页查询主订单。
+     *
+     * @param vo 订单分页查询参数
+     * @return 当前页主订单
+     */
+    private Page<Order> findAdminOrderPage(OrderVO vo) {
+        Page<Order> page = new Page<>(vo.getPageNum(), vo.getPageSize());
+        QueryWrapper<Order> orderWrapper = buildAdminOrderPageWrapper(vo);
+        return super.page(page, orderWrapper);
+    }
+
+    /**
+     * 构建管理端订单查询条件。
+     *
+     * <p>这里仅查询主订单表；子订单和活动等关联信息在分页结果出来后再按当前页批量补充。</p>
+     *
+     * @param vo 订单分页查询参数
+     * @return 管理端订单查询条件
+     */
+    private QueryWrapper<Order> buildAdminOrderPageWrapper(OrderVO vo) {
+        QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
+        // 后台列表默认只展示未删除订单，兼容 is_deleted 为空的历史数据。
+        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
+        if (StrUtil.isNotBlank(vo.getOrderNo())) {
+            orderWrapper.like(Order.ORDER_NO, vo.getOrderNo().trim());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getMuseumId())) {
+            orderWrapper.eq(Order.MUSEUM_ID, vo.getMuseumId());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getVisitorId())) {
+            orderWrapper.eq(Order.VISITOR_ID, vo.getVisitorId());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getTeamId())) {
+            orderWrapper.eq(Order.TEAM_ID, vo.getTeamId());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getOrderType())) {
+            orderWrapper.eq(Order.ORDER_TYPE, vo.getOrderType());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getOrderStatus())) {
+            orderWrapper.eq(Order.ORDER_STATUS, vo.getOrderStatus());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getIsUsed())) {
+            orderWrapper.eq(Order.IS_USED, vo.getIsUsed());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getAppointmentDate())) {
+            orderWrapper.eq(Order.APPOINTMENT_DATE, vo.getAppointmentDate());
+        }
+        orderWrapper.orderByDesc(Order.ID);
+        return orderWrapper;
     }
 
     /**

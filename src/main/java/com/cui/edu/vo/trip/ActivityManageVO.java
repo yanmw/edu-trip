@@ -23,4 +23,7 @@ public class ActivityManageVO extends BasisVO {
 
     @ApiModelProperty(value = "状态：1启用 0禁用")
     private Integer status;
+
+    @ApiModelProperty(value = "活动分类，1：团队；2：个人")
+    private Integer participationType;
 }

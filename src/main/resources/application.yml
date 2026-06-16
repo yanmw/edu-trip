@@ -94,8 +94,6 @@ unionPay:
   appletRefundUrl: https://api-mop.chinaums.com/v1/netpay/refund
   appletRefundQueryUrl: https://api-mop.chinaums.com/v1/netpay/refund-query
   aliPayAppletPayUrl: https://api-mop.chinaums.com/v1/netpay/trade/create
-  tokenUrl: https://api-mop.chinaums.com/v1/token/access
-  accessTokenExpireSeconds: 300
 ############## Sa-Token 配置 (文档: https://sa-token.cc) ##############
 sa-token:
   # token 名称（同时也是 cookie 名称）

@@ -10,6 +10,7 @@ import com.cui.edu.system.entity.SysException;
 import com.cui.edu.system.service.SysExceptionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -167,6 +168,16 @@ public class GlobalExceptionHandlerConfig {
     }
 
     /**
+     * 请求体JSON格式错误
+     */
+    @ExceptionHandler(value = HttpMessageNotReadableException.class)
+    @ResponseBody
+    public HttpResult httpMessageNotReadableExceptionHandler(HttpServletRequest req, HttpMessageNotReadableException e) {
+        exceptionIntoTable(req, e, HttpStatus.SC_BAD_REQUEST, "请求体格式错误");
+        return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "请求体格式错误，请检查JSON格式");
+    }
+
+    /**
      * 处理其他异常
      *
      * @param req
@@ -176,16 +187,22 @@ public class GlobalExceptionHandlerConfig {
     @ExceptionHandler(value = Exception.class)
     @ResponseBody
     public HttpResult exceptionHandler(HttpServletRequest req, Exception e) {
-        exceptionIntoTable(e, HttpStatus.SC_INTERNAL_SERVER_ERROR, SysConstants.EXCEPTION);
+        exceptionIntoTable(req, e, HttpStatus.SC_INTERNAL_SERVER_ERROR, SysConstants.EXCEPTION);
         return HttpResult.error(HttpStatus.SC_INTERNAL_SERVER_ERROR, "当前网络情况异常请稍后再试。");
     }
 
     private void exceptionIntoTable(Exception e, int httpStatusCode, String exceptionType) {
-        log.error("系统异常，类型：{}，状态码：{}，消息：{}", exceptionType, httpStatusCode, e.getMessage(), e);
+        exceptionIntoTable(null, e, httpStatusCode, exceptionType);
+    }
+
+    private void exceptionIntoTable(HttpServletRequest req, Exception e, int httpStatusCode, String exceptionType) {
+        String requestInfo = buildRequestInfo(req);
+        String exceptionInfo = buildExceptionInfo(requestInfo, e.getMessage());
+        log.error("系统异常，请求：{}，类型：{}，状态码：{}，消息：{}", requestInfo, exceptionType, httpStatusCode, e.getMessage(), e);
         SysException exception = new SysException();
         exception.setHttpStatusCode(httpStatusCode);
         exception.setExceptionType(exceptionType);
-        exception.setExceptionInfo(e.getMessage());
+        exception.setExceptionInfo(exceptionInfo);
         StackTraceElement[] elements = e.getStackTrace();
         StringBuffer sb = new StringBuffer();
         for (StackTraceElement element : elements) {
@@ -200,5 +217,24 @@ public class GlobalExceptionHandlerConfig {
         } catch (Exception saveException) {
             log.error("系统异常信息保存失败，类型：{}，状态码：{}", exceptionType, httpStatusCode, saveException);
         }
+    }
+
+    private String buildRequestInfo(HttpServletRequest req) {
+        if (req == null) {
+            return "未知请求";
+        }
+        String queryString = req.getQueryString();
+        String uri = req.getRequestURI();
+        if (queryString != null && queryString.length() > 0) {
+            uri = uri + "?" + queryString;
+        }
+        return req.getMethod() + " " + uri;
+    }
+
+    private String buildExceptionInfo(String requestInfo, String message) {
+        if (message == null) {
+            message = "";
+        }
+        return requestInfo + " " + message;
     }
 }

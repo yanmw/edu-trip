@@ -164,6 +164,9 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (vo.getStatus() != null) {
             ew.eq(ActivityManage.STATUS, vo.getStatus());
         }
+        if (vo.getParticipationType() != null) {
+            ew.eq(ActivityManage.PARTICIPATION_TYPE, vo.getParticipationType());
+        }
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         return ew;

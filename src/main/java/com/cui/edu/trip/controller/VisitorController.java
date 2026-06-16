@@ -64,11 +64,12 @@ public class VisitorController {
     @ApiOperation(value = "Excel导入游客")
     @SaIgnore
     public HttpResult importExcel(@ApiParam(value = "Excel文件", required = true) @RequestParam("file") MultipartFile file,
-                                  @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId) {
+                                  @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId,
+                                  @ApiParam(value = "游客批次号") @RequestParam(value = "batchNo", required = false) String batchNo) {
         if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
-        int count = visitorService.importExcel(file, teamId);
+        int count = visitorService.importExcel(file, teamId, batchNo);
         return HttpResult.ok(count);
     }
 
@@ -101,6 +102,19 @@ public class VisitorController {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = visitorService.findPage(vo);
             return HttpResult.ok(pageResult);
+        } else {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
+        }
+    }
+
+    @GetMapping(value = "/findByTeamId")
+    @ApiOperation(value = "根据团队ID查询游客列表")
+    @SaIgnore
+    public HttpResult findByTeamId(@ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId,
+                                   @ApiParam(value = "游客批次号") @RequestParam(value = "batchNo", required = false) String batchNo) {
+        if (ObjectUtil.isNotEmpty(teamId)) {
+            List<Visitor> visitorList = visitorService.findByTeamId(teamId, batchNo);
+            return HttpResult.ok(visitorList);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }

@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import java.time.LocalDateTime;
 import java.io.Serializable;
+import java.util.List;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -75,6 +76,10 @@ public class Team implements Serializable {
 
     @ApiModelProperty(value = "微信openid")
     private String wechatOpenid;
+
+    @ApiModelProperty(value = "团队游客列表")
+    @TableField(exist = false)
+    private List<Visitor> visitorList;
 
 
     public static final String ID = "id";

@@ -88,6 +88,7 @@ edu:
 unionPay:
   appletAppId: 8a81c1bf76674cf6017922771025035a
   appletAppKey: c92bf75e2a434baaab5ea39ee1800b74
+  notifySignKey: JGdee5B4bDs62r2XBfp7DTzJkQDQXERDPSZhSPrFcdAWG8XA # 银联回调验签通讯密钥，由银联商务分配；不是开放平台OPEN-BODY-SIG使用的appletAppKey
   appletPayUrl: https://api-mop.chinaums.com/v1/netpay/wx/unified-order
   appletQueryUrl: https://api-mop.chinaums.com/v1/netpay/query
   appletCloseUrl: https://api-mop.chinaums.com/v1/netpay/close

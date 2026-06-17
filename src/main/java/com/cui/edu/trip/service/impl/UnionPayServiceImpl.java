@@ -252,7 +252,9 @@ public class UnionPayServiceImpl implements UnionPayService {
      * 校验银联支付/退款异步通知签名。
      *
      * <p>文档要求除 sign 外的表单字段按 ASCII 字典序拼接，并在末尾追加通讯密钥后计算签名。
-     * signType 为空时银联默认使用 MD5；传 SHA256 时按 SHA256 计算。</p>
+     * signType 为空时银联默认使用 MD5；传 SHA256 时按 SHA256 计算。
+     * 注意：这里使用的是银联商务分配的回调通讯密钥 notifySignKey，不是业务请求
+     * OPEN-BODY-SIG 使用的 appletAppKey。</p>
      *
      * @param parameterMap 回调表单参数
      * @return true 表示验签通过
@@ -265,18 +267,25 @@ public class UnionPayServiceImpl implements UnionPayService {
             return false;
         }
 
-        String waitSign = buildNotifyWaitSign(parameterMap) + getNotifySignKey();
+        String notifySignKeyValue = getNotifySignKey();
+        if (notifySignKeyValue == null) {
+            log.warn("银联回调验签失败：unionPay.notifySignKey未配置，无法使用银联商务回调通讯密钥验签");
+            return false;
+        }
+
+        String waitSign = buildNotifyWaitSign(parameterMap);
         String signType = getFirstValue(parameterMap, "signType");
         String calculatedSign;
         if ("SHA256".equalsIgnoreCase(signType)) {
-            calculatedSign = DigestUtils.sha256Hex(waitSign.getBytes(StandardCharsets.UTF_8));
+            calculatedSign = DigestUtils.sha256Hex((waitSign + notifySignKeyValue).getBytes(StandardCharsets.UTF_8));
         } else {
-            calculatedSign = DigestUtils.md5Hex(waitSign.getBytes(StandardCharsets.UTF_8));
+            calculatedSign = DigestUtils.md5Hex((waitSign + notifySignKeyValue).getBytes(StandardCharsets.UTF_8));
         }
 
         boolean passed = sign.equalsIgnoreCase(calculatedSign);
         if (!passed) {
-            log.warn("银联回调验签失败：signType={}，waitSign={}", signType, buildNotifyWaitSign(parameterMap));
+            log.warn("银联回调验签失败：signType={}，unionPaySign={}，calculatedSign={}，waitSign={}",
+                    signType, sign, calculatedSign, waitSign);
         }
         return passed;
     }
@@ -395,7 +404,7 @@ public class UnionPayServiceImpl implements UnionPayService {
         if (notifySignKey != null && !notifySignKey.trim().isEmpty()) {
             return notifySignKey;
         }
-        return appletAppKey;
+        return null;
     }
 
     private String getFirstValue(Map<String, String[]> parameterMap, String key) {

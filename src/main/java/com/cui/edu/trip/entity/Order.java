@@ -61,6 +61,11 @@ public class Order implements Serializable {
     @ApiModelProperty(value = "是否使用：1已使用 0未使用")
     private Integer isUsed;
 
+    @ApiModelProperty(value = "核销时间")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime verificationTime;
+
     @ApiModelProperty(value = "退款金额")
     private Integer refundAmount;
 
@@ -72,6 +77,9 @@ public class Order implements Serializable {
 
     @ApiModelProperty(value = "团队ID")
     private Long teamId;
+
+    @ApiModelProperty(value = "游客批次号")
+    private String batchNo;
 
     @ApiModelProperty(value = "游客ID")
     private Long visitorId;
@@ -129,6 +137,8 @@ public class Order implements Serializable {
 
     public static final String IS_USED = "is_used";
 
+    public static final String VERIFICATION_TIME = "verification_time";
+
     public static final String REFUND_AMOUNT = "refund_amount";
 
     public static final String REFUND_QUANTITY = "refund_quantity";
@@ -136,6 +146,8 @@ public class Order implements Serializable {
     public static final String MINI_PROGRAM_PAY_PARAMS = "mini_program_pay_params";
 
     public static final String TEAM_ID = "team_id";
+
+    public static final String BATCH_NO = "batch_no";
 
     public static final String VISITOR_ID = "visitor_id";
 

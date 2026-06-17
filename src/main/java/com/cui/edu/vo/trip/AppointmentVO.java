@@ -28,6 +28,9 @@ public class AppointmentVO {
     @ApiModelProperty(value = "团队id")
     private Long teamId;
 
+    @ApiModelProperty(value = "游客批次号，团队下单必传，个人下单不允许传")
+    private String batchNo;
+
     @ApiModelProperty(value = "预约日期")
     @JsonFormat(pattern = "yyyy-MM-dd")
     @DateTimeFormat(pattern = "yyyy-MM-dd")

@@ -9,6 +9,7 @@ import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.SysException;
 import com.cui.edu.system.service.SysExceptionService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -121,16 +122,6 @@ public class GlobalExceptionHandlerConfig {
     }
 
     /**
-     * 处理IO异常
-     */
-    @ExceptionHandler(value = IOException.class)
-    @ResponseBody
-    public HttpResult ioExceptionHandler(HttpServletRequest req, IOException e) {
-        exceptionIntoTable(e, HttpStatus.SC_SERVICE_UNAVAILABLE, SysConstants.IO_EXCEPTION);
-        return HttpResult.error(HttpStatus.SC_SERVICE_UNAVAILABLE, "IO异常繁忙!");
-    }
-
-    /**
      * 无权限
      *
      * @param e
@@ -175,6 +166,36 @@ public class GlobalExceptionHandlerConfig {
     public HttpResult httpMessageNotReadableExceptionHandler(HttpServletRequest req, HttpMessageNotReadableException e) {
         exceptionIntoTable(req, e, HttpStatus.SC_BAD_REQUEST, "请求体格式错误");
         return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "请求体格式错误，请检查JSON格式");
+    }
+
+    /**
+     * 捕获Tomcat核心异常（ClientAbortException）
+     * 无论返回JSON还是文件，连接断开都会抛这个异常，优先级最高
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    public void handleClientAbortException(ClientAbortException e) {
+        // 仅打印WARN级别日志，不输出完整堆栈（避免日志刷屏）
+        log.warn("[客户端断开连接] 场景：{} | 原因：{}",
+                e.getMessage().contains("Resource") ? "文件/资源响应" : "JSON接口响应",
+                e.getMessage());
+    }
+
+    /**
+     * 处理底层IO异常（Broken pipe/Connection reset by peer）
+     * 极少数情况下不会包装成ClientAbortException，直接抛IOException，用这个兜底
+     */
+    @ExceptionHandler(IOException.class)
+    public HttpResult handleIOException(IOException e) {
+        String msg = e.getMessage();
+        if (msg != null && (msg.contains("Broken pipe") || msg.contains("Connection reset by peer"))) {
+            log.warn("[客户端连接重置] 原因：{}", msg);
+            return HttpResult.ok();
+        } else {
+            // 非连接类IO异常（如文件不存在、读取失败），正常打印错误日志（需要关注）
+            log.error("[IO异常-需关注] 非客户端连接问题，详情：", e);
+            exceptionIntoTable(e, HttpStatus.SC_INTERNAL_SERVER_ERROR, SysConstants.IO_EXCEPTION);
+            return HttpResult.error(HttpStatus.SC_INTERNAL_SERVER_ERROR, "当前IO_EXCEPTION。");
+        }
     }
 
     /**

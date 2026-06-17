@@ -1,5 +1,6 @@
 package com.cui.edu.trip.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
@@ -280,6 +281,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setOrderStatus(Order.OrderStatusEnum.PAYING.getValue());
         order.setVisitorId(vo.getVisitorId());
         order.setTeamId(vo.getTeamId());
+        order.setBatchNo(StrUtil.isBlank(vo.getBatchNo()) ? null : vo.getBatchNo().trim());
         order.setOrderType(ObjectUtil.isNotEmpty(vo.getTeamId()) ? 2 : 1);
         order.setIsUsed(SysConstants.IS_FALSE);
         order.setIsDeleted(SysConstants.IS_FALSE);
@@ -1642,7 +1644,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult(checkMsg);
         }
 
-        // 第六步：核销订单。当前订单表只有主订单使用状态，核销时更新主订单为已使用。
+        // 第六步：核销订单。核销成功时同时记录核销时间，方便后台追溯实际使用节点。
         Integer beforeIsUsed = order.getIsUsed();
         markOrderUsed(order);
         saveVerificationSuccessLog(order, beforeIsUsed);
@@ -1653,6 +1655,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 根据游客微信 openId 或团队 ID 分页查询订单列表。
      *
      * <p>游客订单通过 openId 先定位游客，再按 visitorId 查询；团队订单直接按 teamId 查询。
+     * 传入 batchNo 时会继续限定游客批次，便于同一团队按不同批次查看订单。
      * 如果两个条件都传入，则查询满足任一条件的订单。分页查询只处理当前页订单，并给每个 Order 的 detailList 和关联表信息字段赋值。</p>
      *
      * @param vo 订单分页查询参数
@@ -1667,7 +1670,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         // 第二步：只分页查询当前页主订单，避免一次性把用户全部订单拉出来。
-        Page<Order> page = findOrderPageByVisitorOrTeam(visitorId, vo.getTeamId(), vo.getPageNum(), vo.getPageSize());
+        Page<Order> page = findOrderPageByVisitorOrTeam(visitorId, vo.getTeamId(), vo.getBatchNo(), vo.getPageNum(), vo.getPageSize());
         if (page.getRecords().isEmpty()) {
             return PageResultUtil.getPageResult(page);
         }
@@ -1751,11 +1754,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      *
      * @param visitorId 游客 ID
      * @param teamId    团队 ID
+     * @param batchNo   游客批次号
      * @param pageNum   当前页
      * @param pageSize  每页数量
      * @return 分页订单
      */
-    private Page<Order> findOrderPageByVisitorOrTeam(Long visitorId, Long teamId, Integer pageNum, Integer pageSize) {
+    private Page<Order> findOrderPageByVisitorOrTeam(Long visitorId, Long teamId, String batchNo, Integer pageNum, Integer pageSize) {
         Page<Order> page = new Page<>(pageNum, pageSize);
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
         // 订单列表默认只展示未删除订单，is_deleted 为空的历史数据也按未删除处理。
@@ -1770,6 +1774,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 wrapper.eq(Order.TEAM_ID, teamId);
             }
         });
+        if (StrUtil.isNotBlank(batchNo)) {
+            // 批次号用于区分同一团队的不同批游客，传入时只查询当前批次订单。
+            orderWrapper.eq(Order.BATCH_NO, batchNo.trim());
+        }
         orderWrapper.orderByDesc(Order.ID);
         return super.page(page, orderWrapper);
     }
@@ -1809,6 +1817,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (ObjectUtil.isNotEmpty(vo.getTeamId())) {
             orderWrapper.eq(Order.TEAM_ID, vo.getTeamId());
+        }
+        if (StrUtil.isNotBlank(vo.getBatchNo())) {
+            orderWrapper.eq(Order.BATCH_NO, vo.getBatchNo().trim());
         }
         if (ObjectUtil.isNotEmpty(vo.getOrderType())) {
             orderWrapper.eq(Order.ORDER_TYPE, vo.getOrderType());
@@ -1891,6 +1902,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         Map<Long, Museum> museumMap = getMuseumMap(museumIds);
         Map<Long, Visitor> visitorMap = getVisitorMap(visitorIds);
         Map<Long, Team> teamMap = getTeamMap(teamIds);
+        List<Visitor> teamVisitorList = getTeamVisitors(teamIds);
+        Map<Long, List<Visitor>> teamVisitorMap = groupTeamVisitorsByTeam(teamVisitorList);
+        Map<String, List<Visitor>> teamBatchVisitorMap = groupTeamVisitorsByTeamAndBatch(teamVisitorList);
         Map<Long, ActivityManage> activityManageMap = getActivityManageMap(activityIds);
         Map<Long, ActivitySchedule> activityScheduleMap = getActivityScheduleMap(activityScheduleIds);
 
@@ -1898,7 +1912,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             // 主订单直接挂上外键对应的对象，前端不用再根据 ID 反查。
             order.setMuseum(museumMap.get(order.getMuseumId()));
             order.setVisitor(visitorMap.get(order.getVisitorId()));
-            order.setTeam(teamMap.get(order.getTeamId()));
+            // 团队订单返回团队信息时，同步带上该订单批次的游客列表。
+            order.setTeam(buildOrderTeam(order, teamMap, teamVisitorMap, teamBatchVisitorMap));
         }
         for (OrderDetail orderDetail : allDetailList) {
             // 子订单补充活动和场次详情，列表页可以直接展示活动名称、场次时间等信息。
@@ -1939,6 +1954,84 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      */
     private Map<Long, Team> getTeamMap(Set<Long> teamIds) {
         return ObjectUtil.isEmpty(teamIds) ? Collections.emptyMap() : toIdMap(teamService.listByIds(teamIds), Team::getId);
+    }
+
+    /**
+     * 批量查询当前页团队订单涉及的游客。
+     */
+    private List<Visitor> getTeamVisitors(Set<Long> teamIds) {
+        if (ObjectUtil.isEmpty(teamIds)) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<Visitor> visitorWrapper = new QueryWrapper<>();
+        visitorWrapper.in(Visitor.TEAM_ID, teamIds);
+        visitorWrapper.and(wrapper -> wrapper.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Visitor.IS_DELETED));
+        return visitorService.list(visitorWrapper);
+    }
+
+    /**
+     * 按团队 ID 分组团队游客，用于兼容历史订单没有 batchNo 的情况。
+     */
+    private Map<Long, List<Visitor>> groupTeamVisitorsByTeam(List<Visitor> visitorList) {
+        Map<Long, List<Visitor>> visitorMap = new HashMap<>();
+        if (ObjectUtil.isEmpty(visitorList)) {
+            return visitorMap;
+        }
+        for (Visitor visitor : visitorList) {
+            if (ObjectUtil.isEmpty(visitor.getTeamId())) {
+                continue;
+            }
+            visitorMap.computeIfAbsent(visitor.getTeamId(), key -> new ArrayList<>()).add(visitor);
+        }
+        return visitorMap;
+    }
+
+    /**
+     * 按团队 ID + 批次号分组团队游客，确保同一团队不同批次订单返回各自批次的游客。
+     */
+    private Map<String, List<Visitor>> groupTeamVisitorsByTeamAndBatch(List<Visitor> visitorList) {
+        Map<String, List<Visitor>> visitorMap = new HashMap<>();
+        if (ObjectUtil.isEmpty(visitorList)) {
+            return visitorMap;
+        }
+        for (Visitor visitor : visitorList) {
+            if (ObjectUtil.isEmpty(visitor.getTeamId()) || StrUtil.isBlank(visitor.getBatchNo())) {
+                continue;
+            }
+            visitorMap.computeIfAbsent(buildTeamBatchKey(visitor.getTeamId(), visitor.getBatchNo()), key -> new ArrayList<>()).add(visitor);
+        }
+        return visitorMap;
+    }
+
+    /**
+     * 构建订单返回用的团队对象。
+     *
+     * <p>同一团队可能在当前页出现多个批次订单，所以不能复用 teamMap 里的同一个 Team 实例；
+     * 每笔订单复制一个团队对象后，再写入该订单对应批次的游客列表。</p>
+     */
+    private Team buildOrderTeam(Order order, Map<Long, Team> teamMap,
+                                Map<Long, List<Visitor>> teamVisitorMap,
+                                Map<String, List<Visitor>> teamBatchVisitorMap) {
+        if (ObjectUtil.isEmpty(order.getTeamId())) {
+            return null;
+        }
+        Team team = teamMap.get(order.getTeamId());
+        if (ObjectUtil.isEmpty(team)) {
+            return null;
+        }
+        Team orderTeam = BeanUtil.copyProperties(team, Team.class);
+        List<Visitor> visitorList = StrUtil.isBlank(order.getBatchNo())
+                ? teamVisitorMap.getOrDefault(order.getTeamId(), Collections.emptyList())
+                : teamBatchVisitorMap.getOrDefault(buildTeamBatchKey(order.getTeamId(), order.getBatchNo()), Collections.emptyList());
+        orderTeam.setVisitorList(visitorList);
+        return orderTeam;
+    }
+
+    /**
+     * 构建团队批次分组 key。
+     */
+    private String buildTeamBatchKey(Long teamId, String batchNo) {
+        return teamId + ":" + batchNo.trim();
     }
 
     /**
@@ -2120,7 +2213,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param order 主订单
      */
     private void markOrderUsed(Order order) {
+        // isUsed 表示最终核销结果，verificationTime 记录本次核销实际发生时间。
         order.setIsUsed(SysConstants.IS_TRUE);
+        order.setVerificationTime(LocalDateTime.now());
         super.updateById(order);
     }
 
@@ -2928,6 +3023,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isEmpty(vo.getVisitorId()) && ObjectUtil.isEmpty(vo.getTeamId())) {
             return "游客ID和团队ID至少填写一个";
         }
+        // 团队订单需要批次号区分同一团队的不同批游客；个人订单没有批次维度，不允许前端误传。
+        if (ObjectUtil.isNotEmpty(vo.getTeamId()) && StrUtil.isBlank(vo.getBatchNo())) {
+            return "团队下单时游客批次号不能为空";
+        }
+        if (ObjectUtil.isEmpty(vo.getTeamId()) && StrUtil.isNotBlank(vo.getBatchNo())) {
+            return "个人下单时不能传游客批次号";
+        }
         if (ObjectUtil.isEmpty(vo.getMuseumId())) {
             return "博物馆ID不能为空";
         }
@@ -3006,8 +3108,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isEmpty(team) || SysConstants.IS_TRUE.equals(team.getIsDeleted())) {
             return "团队不存在";
         }
-        if (hasPayingOrder(Order.TEAM_ID, vo.getTeamId())) {
-            return "该团队存在未支付订单，请支付或主动放弃后再下单";
+        if (hasTeamPayingOrder(vo.getTeamId(), vo.getBatchNo())) {
+            return "该团队当前批次存在未支付订单，请支付或主动放弃后再下单";
         }
         return null;
     }
@@ -3022,6 +3124,23 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private boolean hasPayingOrder(String column, Long id) {
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
         orderWrapper.eq(column, id);
+        orderWrapper.eq(Order.ORDER_STATUS, Order.OrderStatusEnum.PAYING.getValue());
+        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
+        return super.count(orderWrapper) > 0;
+    }
+
+    /**
+     * 判断团队当前游客批次是否已有待支付订单。
+     *
+     * @param teamId  团队 ID
+     * @param batchNo 游客批次号
+     * @return true 表示同一团队同一批次存在未支付订单
+     */
+    private boolean hasTeamPayingOrder(Long teamId, String batchNo) {
+        QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
+        orderWrapper.eq(Order.TEAM_ID, teamId);
+        // 同一团队可能多批次出行，未支付订单限制只约束当前批次。
+        orderWrapper.eq(Order.BATCH_NO, batchNo.trim());
         orderWrapper.eq(Order.ORDER_STATUS, Order.OrderStatusEnum.PAYING.getValue());
         orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         return super.count(orderWrapper) > 0;

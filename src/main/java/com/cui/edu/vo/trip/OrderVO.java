@@ -28,6 +28,9 @@ public class OrderVO extends BasisVO {
     @ApiModelProperty(value = "团队ID")
     private Long teamId;
 
+    @ApiModelProperty(value = "游客批次号")
+    private String batchNo;
+
     @ApiModelProperty(value = "订单类型（1：个人；2：团队）")
     private Integer orderType;
 

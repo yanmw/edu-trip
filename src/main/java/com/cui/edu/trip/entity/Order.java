@@ -118,6 +118,10 @@ public class Order implements Serializable {
     @TableField(exist = false)
     private List<OrderDetail> detailList;
 
+    @ApiModelProperty(value = "是否已评价：1已评价；0未评价")
+    @TableField(exist = false)
+    private Integer isEvaluated;
+
 
     public static final String ID = "id";
 

@@ -9,11 +9,14 @@ import com.cui.edu.common.SysConstants;
 import com.cui.edu.config.redis.DistributedLockHandler;
 import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.entity.OrderDetail;
+import com.cui.edu.trip.entity.OrderLog;
 import com.cui.edu.trip.entity.Team;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.mapper.OrderMapper;
+import com.cui.edu.trip.service.EvaluationService;
 import com.cui.edu.trip.service.OrderDetailService;
 import com.cui.edu.trip.service.OrderLogService;
 import com.cui.edu.trip.service.TeamService;
@@ -123,6 +126,51 @@ class OrderServiceImplTest {
         String sqlSegment = queryCaptor.getValue().getSqlSegment();
         assertTrue(sqlSegment.contains("team_id"));
         assertTrue(sqlSegment.contains("batch_no"));
+    }
+
+    @Test
+    void findPageMarksWhetherCurrentPageOrdersHaveEvaluation() {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        when(orderMapper.selectPage(any(Page.class), any())).thenAnswer(invocation -> {
+            Page<Order> page = invocation.getArgument(0);
+            Order evaluatedOrder = new Order();
+            evaluatedOrder.setId(1L);
+            evaluatedOrder.setOrderNo("202606170001");
+            evaluatedOrder.setTeamId(9L);
+            Order notEvaluatedOrder = new Order();
+            notEvaluatedOrder.setId(2L);
+            notEvaluatedOrder.setOrderNo("202606170002");
+            notEvaluatedOrder.setTeamId(9L);
+            page.setRecords(Arrays.asList(evaluatedOrder, notEvaluatedOrder));
+            page.setTotal(2);
+            return page;
+        });
+        OrderDetailService orderDetailService = mock(OrderDetailService.class);
+        when(orderDetailService.list(any())).thenReturn(Collections.emptyList());
+        TeamService teamService = mock(TeamService.class);
+        when(teamService.listByIds(any())).thenReturn(Collections.emptyList());
+        VisitorService visitorService = mock(VisitorService.class);
+        when(visitorService.list(any(Wrapper.class))).thenReturn(Collections.emptyList());
+        EvaluationService evaluationService = mock(EvaluationService.class);
+        Evaluation evaluation = new Evaluation();
+        evaluation.setOrderId(1L);
+        when(evaluationService.list(any(Wrapper.class))).thenReturn(Collections.singletonList(evaluation));
+
+        OrderServiceImpl orderService = orderService(orderMapper);
+        ReflectionTestUtils.setField(orderService, "orderDetailService", orderDetailService);
+        ReflectionTestUtils.setField(orderService, "teamService", teamService);
+        ReflectionTestUtils.setField(orderService, "visitorService", visitorService);
+        ReflectionTestUtils.setField(orderService, "evaluationService", evaluationService);
+
+        OrderVO vo = new OrderVO();
+        vo.setPageNum(1);
+        vo.setPageSize(10);
+        vo.setTeamId(9L);
+        PageResult result = orderService.findPage(vo);
+
+        List<Order> orders = (List<Order>) result.getContent();
+        assertEquals(SysConstants.IS_TRUE, orders.get(0).getIsEvaluated());
+        assertEquals(SysConstants.IS_FALSE, orders.get(1).getIsEvaluated());
     }
 
     @Test
@@ -312,6 +360,64 @@ class OrderServiceImplTest {
         Order updatedOrder = orderCaptor.getValue();
         assertEquals(SysConstants.IS_TRUE, updatedOrder.getIsUsed());
         assertNotNull(updatedOrder.getVerificationTime());
+    }
+
+    @Test
+    void refundRecordsOperationRequestWhenSingleRefundCheckFails() throws Exception {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        OrderDetailService orderDetailService = mock(OrderDetailService.class);
+        OrderLogService orderLogService = mock(OrderLogService.class);
+
+        OrderDetail orderDetail = new OrderDetail();
+        orderDetail.setId(11L);
+        orderDetail.setOrderId(7L);
+        orderDetail.setOrderNo("202606170001");
+        orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue());
+        when(orderDetailService.getById(11L)).thenReturn(orderDetail);
+
+        Order order = new Order();
+        order.setId(7L);
+        order.setOrderNo("202606170001");
+        order.setOrderStatus(Order.OrderStatusEnum.SUCCESS.getValue());
+        order.setIsUsed(SysConstants.IS_TRUE);
+        when(orderMapper.selectById(7L)).thenReturn(order);
+
+        OrderServiceImpl orderService = orderService(orderMapper);
+        ReflectionTestUtils.setField(orderService, "orderDetailService", orderDetailService);
+        ReflectionTestUtils.setField(orderService, "orderLogService", orderLogService);
+
+        Map result = orderService.refund(11L, "游客临时取消");
+
+        assertEquals("订单已核销，无法退款", result.get(SysConstants.MSG));
+        ArgumentCaptor<OrderLog> logCaptor = ArgumentCaptor.forClass(OrderLog.class);
+        verify(orderLogService).saveLog(logCaptor.capture());
+        OrderLog orderLog = logCaptor.getValue();
+        assertEquals(OrderLog.ACTION_REFUND_APPLY, orderLog.getBizAction());
+        assertEquals(SysConstants.IS_FALSE, orderLog.getSuccess());
+        assertTrue(orderLog.getRequestContent().contains("orderDetailId"));
+        assertTrue(orderLog.getRequestContent().contains("游客临时取消"));
+    }
+
+    @Test
+    void refundAllRecordsOperationWhenOrderMissing() throws Exception {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        when(orderMapper.selectOne(any())).thenReturn(null);
+        OrderLogService orderLogService = mock(OrderLogService.class);
+
+        OrderServiceImpl orderService = orderService(orderMapper);
+        ReflectionTestUtils.setField(orderService, "orderLogService", orderLogService);
+
+        Map result = orderService.refundAll("202606170002", "管理员手动全退");
+
+        assertEquals("订单不存在", result.get(SysConstants.MSG));
+        ArgumentCaptor<OrderLog> logCaptor = ArgumentCaptor.forClass(OrderLog.class);
+        verify(orderLogService).saveLog(logCaptor.capture());
+        OrderLog orderLog = logCaptor.getValue();
+        assertEquals("202606170002", orderLog.getOrderNo());
+        assertEquals(OrderLog.ACTION_REFUND_APPLY, orderLog.getBizAction());
+        assertEquals(SysConstants.IS_FALSE, orderLog.getSuccess());
+        assertTrue(orderLog.getRequestContent().contains("refundAll"));
+        assertTrue(orderLog.getRequestContent().contains("管理员手动全退"));
     }
 
     private OrderServiceImpl orderService(OrderMapper orderMapper) {

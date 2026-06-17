@@ -18,6 +18,7 @@ import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.entity.ActivitySchedule;
+import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.entity.OrderDetail;
 import com.cui.edu.trip.entity.OrderLog;
@@ -26,6 +27,7 @@ import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.mapper.OrderMapper;
 import com.cui.edu.trip.service.ActivityManageService;
 import com.cui.edu.trip.service.ActivityScheduleService;
+import com.cui.edu.trip.service.EvaluationService;
 import com.cui.edu.trip.service.OrderDetailService;
 import com.cui.edu.trip.service.OrderLogService;
 import com.cui.edu.trip.service.OrderService;
@@ -97,6 +99,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     @Autowired
     private OrderLogService orderLogService;
+
+    @Autowired
+    private EvaluationService evaluationService;
 
     @Value("${edu.wechat.mini-program.app-id:}")
     private String miniProgramAppId;
@@ -1106,6 +1111,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Transactional(rollbackFor = Exception.class)
     public Map refund(Long orderDetailId, String refundReason) throws Exception {
         Map result = new HashMap(1);
+        String requestContent = buildRefundOperationRequestContent("refund", orderDetailId, null, refundReason);
         // 第一步：先定位子订单和主订单，退款以子订单为最小处理单位。
         if (ObjectUtil.isEmpty(orderDetailId)) {
             return msgResult("子订单ID不能为空");
@@ -1116,6 +1122,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         Order order = super.getById(orderDetail.getOrderId());
         if (ObjectUtil.isEmpty(order) || SysConstants.IS_TRUE.equals(order.getIsDeleted())) {
+            saveRefundApplyOrderNoFailLog(orderDetail.getOrderNo(), requestContent, "主订单不存在");
             return msgResult("主订单不存在");
         }
         Integer beforeOrderStatus = order.getOrderStatus();
@@ -1127,7 +1134,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isNotEmpty(checkMsg)) {
             result.put(SysConstants.MSG, checkMsg);
             saveRefundApplyCheckFailLog(order, Collections.singletonList(orderDetail), null, null, checkMsg,
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return result;
         }
 
@@ -1136,7 +1143,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             String msg = "订单所属博物馆银联配置不存在";
             result.put(SysConstants.MSG, msg);
             saveRefundApplyCheckFailLog(order, Collections.singletonList(orderDetail), null, null, msg,
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return result;
         }
         String refundOrderId = textCodeGenerator.generate() + "T";
@@ -1148,7 +1155,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isNotEmpty(refundMsg)) {
             result.put(SysConstants.MSG, refundMsg);
             saveRefundApplyCheckFailLog(order, Collections.singletonList(orderDetail), refundOrderId, jsonObject, refundMsg,
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return result;
         }
 
@@ -1161,7 +1168,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         super.updateById(order);
         sendRefundQueryMessage(refundOrderId, order, museum, orderDetail.getRefundAmount());
         saveRefundApplySuccessLog(order, Collections.singletonList(orderDetail), refundOrderId, orderDetail.getRefundAmount(),
-                jsonObject, beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                jsonObject, beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
         return result;
     }
 
@@ -1180,10 +1187,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Transactional(rollbackFor = Exception.class)
     public Map refundAll(String orderNo, String refundReason) throws Exception {
         Map<String, String> map = new HashMap(1);
+        String requestContent = buildRefundOperationRequestContent("refundAll", null, orderNo, refundReason);
         // 第一步：按系统订单号查询主订单，一键全退只接受明确的订单号。
         Order order = getOrderByOrderNo(orderNo);
         if (ObjectUtil.isEmpty(order)) {
             map.put(SysConstants.MSG, "订单不存在");
+            saveRefundApplyOrderNoFailLog(orderNo, requestContent, map.get(SysConstants.MSG));
             return map;
         }
         List<OrderDetail> orderDetails = getOrderDetails(order.getOrderNo());
@@ -1196,32 +1205,26 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (orderDetails.isEmpty()) {
             map.put(SysConstants.MSG, "未查询到子订单");
             saveRefundApplyCheckFailLog(order, orderDetails, null, null, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
-            return map;
-        }
-        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
-            map.put(SysConstants.MSG, "订单已核销，无法退款");
-            saveRefundApplyCheckFailLog(order, orderDetails, null, null, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
         // 校验订单是否已经发生过退款，或者不是支付成功状态
         if (hasRefundQuantity(order) || !Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
             map.put(SysConstants.MSG, "该订单已有退款操作，无法一键全退，请使用逐个退款功能");
             saveRefundApplyCheckFailLog(order, orderDetails, null, null, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
         if (!allDetailsCanRefund(orderDetails)) {
             map.put(SysConstants.MSG, "存在不可退款的子订单，无法一键全退");
             saveRefundApplyCheckFailLog(order, orderDetails, null, null, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
         if (ObjectUtil.isEmpty(museum) || ObjectUtil.isEmpty(museum.getMid()) || ObjectUtil.isEmpty(museum.getTid())) {
             map.put(SysConstants.MSG, "订单所属博物馆银联配置不存在");
             saveRefundApplyCheckFailLog(order, orderDetails, null, null, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
         // 第三步：退款前主动查银联原支付订单，确认银联侧确实支付成功。
@@ -1231,7 +1234,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (!isUnionSuccessResponse(query) || !isUnionPayTradeSuccess(query)) {
             map.put(SysConstants.MSG, "银联未确认原订单支付成功，无法退款");
             saveRefundApplyCheckFailLog(order, orderDetails, null, query, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
 
@@ -1241,7 +1244,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isEmpty(totalAmount) || !totalAmount.equals(order.getPayAmount())) {
             map.put(SysConstants.MSG, "银联支付金额与本地订单金额不一致，无法退款");
             saveRefundApplyCheckFailLog(order, orderDetails, null, query, map.get(SysConstants.MSG),
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
         String refundOrderId = textCodeGenerator.generate() + "T";
@@ -1251,7 +1254,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (ObjectUtil.isNotEmpty(refundMsg)) {
             map.put(SysConstants.MSG, refundMsg);
             saveRefundApplyCheckFailLog(order, orderDetails, refundOrderId, jsonObject, refundMsg,
-                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                    beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
             return map;
         }
 
@@ -1263,7 +1266,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         super.updateById(order);
         sendRefundQueryMessage(refundOrderId, order, museum, totalAmount);
         saveRefundApplySuccessLog(order, orderDetails, refundOrderId, totalAmount, jsonObject,
-                beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+                beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity, requestContent);
         return map;
     }
 
@@ -1275,12 +1278,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @return null 表示校验通过，否则返回前端提示
      */
     private String checkSingleRefund(OrderDetail orderDetail, Order order) {
-        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
-            return "订单已核销，无法退款";
-        }
         if (!Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())
                 && !Order.OrderStatusEnum.PARTIAL_REFUND.getValue().equals(order.getOrderStatus())) {
             return "订单当前状态不允许退款";
+        }
+        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
+            return "订单已核销，无法退款";
         }
         if (OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue().equals(orderDetail.getOrderStatus()) ||
                 OrderDetail.OrderDetailStatusEnum.REFUND.getValue().equals(orderDetail.getOrderStatus())) {
@@ -1325,6 +1328,28 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         log.info("退款成功，等待回调");
         return null;
+    }
+
+    /**
+     * 构建退款申请操作记录中的请求内容。
+     *
+     * @param operation     退款操作类型：refund 单个子订单退款；refundAll 主订单全额退款
+     * @param orderDetailId 子订单 ID，单个子订单退款时存在
+     * @param orderNo       主订单号，全额退款时存在
+     * @param refundReason  管理员填写的退款原因
+     * @return 退款申请请求内容 JSON
+     */
+    private String buildRefundOperationRequestContent(String operation, Long orderDetailId, String orderNo, String refundReason) {
+        JSONObject request = new JSONObject();
+        request.put("operation", operation);
+        if (ObjectUtil.isNotEmpty(orderDetailId)) {
+            request.put("orderDetailId", orderDetailId);
+        }
+        if (StrUtil.isNotBlank(orderNo)) {
+            request.put("orderNo", orderNo.trim());
+        }
+        request.put("refundReason", refundReason);
+        return request.toString();
     }
 
     /**
@@ -1677,7 +1702,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         // 第三步：当前页主订单查出后，再批量补充子订单列表。
         fillOrderDetailList(page.getRecords());
-        // 第四步：批量补充订单和子订单里保存的外键对应的表信息。
+        // 第四步：批量判断当前页每笔订单是否已经评价，供前端控制评价入口展示。
+        fillOrderEvaluationStatus(page.getRecords());
+        // 第五步：批量补充订单和子订单里保存的外键对应的表信息。
         fillOrderRelationInfo(page.getRecords());
         return PageResultUtil.getPageResult(page);
     }
@@ -1860,6 +1887,44 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         for (Order order : orderList) {
             // 子订单直接放到 Order 的非数据库字段 detailList 中返回给前端。
             order.setDetailList(detailMap.getOrDefault(order.getOrderNo(), Collections.emptyList()));
+        }
+    }
+
+    /**
+     * 给当前页订单标记是否已经评价。
+     *
+     * <p>评价表通过主订单 ID 关联订单；这里先批量查出当前页已有评价的订单 ID，
+     * 再给每笔订单写入 isEvaluated，避免列表页按订单逐条查询评价造成 N+1 查询。</p>
+     *
+     * @param orderList 当前页主订单列表
+     */
+    private void fillOrderEvaluationStatus(List<Order> orderList) {
+        if (ObjectUtil.isEmpty(orderList)) {
+            return;
+        }
+        Set<Long> orderIds = new HashSet<>();
+        for (Order order : orderList) {
+            addId(orderIds, order.getId());
+            // 默认先按未评价处理，后面查到评价记录的订单再改成已评价。
+            order.setIsEvaluated(SysConstants.IS_FALSE);
+        }
+        if (ObjectUtil.isEmpty(orderIds)) {
+            return;
+        }
+
+        QueryWrapper<Evaluation> evaluationWrapper = new QueryWrapper<>();
+        evaluationWrapper.in(Evaluation.ORDER_ID, orderIds);
+        evaluationWrapper.and(wrapper -> wrapper.eq(Evaluation.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Evaluation.IS_DELETED));
+        List<Evaluation> evaluationList = evaluationService.list(evaluationWrapper);
+        Set<Long> evaluatedOrderIds = new HashSet<>();
+        for (Evaluation evaluation : evaluationList) {
+            addId(evaluatedOrderIds, evaluation.getOrderId());
+        }
+
+        for (Order order : orderList) {
+            if (evaluatedOrderIds.contains(order.getId())) {
+                order.setIsEvaluated(SysConstants.IS_TRUE);
+            }
         }
     }
 
@@ -2545,7 +2610,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private void saveRefundApplyCheckFailLog(Order order, List<OrderDetail> orderDetails, String refundOrderId,
                                              JSONObject response, String remark, Integer beforeOrderStatus,
                                              Integer beforeDetailStatus, Integer beforeRefundAmount,
-                                             Integer beforeRefundQuantity) {
+                                             Integer beforeRefundQuantity, String requestContent) {
         OrderLog orderLog = buildOrderLog(order, OrderLog.LOG_TYPE_REFUND,
                 OrderLog.ACTION_REFUND_APPLY, OrderLog.SOURCE_USER);
         orderLog.setOrderDetailId(firstDetailId(orderDetails));
@@ -2559,7 +2624,24 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderLog.setBeforeRefundQuantity(beforeRefundQuantity);
         orderLog.setAfterRefundQuantity(order.getRefundQuantity());
         orderLog.setRefundOrderId(refundOrderId);
+        orderLog.setRequestContent(requestContent);
         fillUnionPayResponse(orderLog, response);
+        orderLog.setSuccess(SysConstants.IS_FALSE);
+        orderLog.setRemark(remark);
+        saveOrderLog(orderLog);
+    }
+
+    /**
+     * 记录仅能定位到订单号的退款申请失败日志。
+     */
+    private void saveRefundApplyOrderNoFailLog(String orderNo, String requestContent, String remark) {
+        if (StrUtil.isBlank(orderNo)) {
+            return;
+        }
+        OrderLog orderLog = buildOrderLog(orderNo, OrderLog.LOG_TYPE_REFUND,
+                OrderLog.ACTION_REFUND_APPLY, OrderLog.SOURCE_USER);
+        orderLog.setRequestContent(requestContent);
+        orderLog.setResponseContent(remark);
         orderLog.setSuccess(SysConstants.IS_FALSE);
         orderLog.setRemark(remark);
         saveOrderLog(orderLog);
@@ -2571,7 +2653,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private void saveRefundApplySuccessLog(Order order, List<OrderDetail> orderDetails, String refundOrderId,
                                            Integer money, JSONObject response, Integer beforeOrderStatus,
                                            Integer beforeDetailStatus, Integer beforeRefundAmount,
-                                           Integer beforeRefundQuantity) {
+                                           Integer beforeRefundQuantity, String requestContent) {
         OrderLog orderLog = buildOrderLog(order, OrderLog.LOG_TYPE_REFUND,
                 OrderLog.ACTION_REFUND_APPLY, OrderLog.SOURCE_USER);
         orderLog.setOrderDetailId(firstDetailId(orderDetails));
@@ -2586,6 +2668,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderLog.setAfterRefundQuantity(order.getRefundQuantity());
         orderLog.setRefundOrderId(refundOrderId);
         orderLog.setTradeAmount(money);
+        orderLog.setRequestContent(requestContent);
         fillUnionPayResponse(orderLog, response);
         orderLog.setSuccess(SysConstants.IS_TRUE);
         orderLog.setRemark("银联已受理退款申请，本地订单已标记为退款中");

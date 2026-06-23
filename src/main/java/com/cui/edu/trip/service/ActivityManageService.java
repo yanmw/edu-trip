@@ -43,7 +43,7 @@ public interface ActivityManageService extends IService<ActivityManage> {
     ActivityManage findById(Long id);
 
     /**
-     * 根据博物馆ID和可选活动分类查询启用且未删除的活动列表，包含活动场次。
+     * 根据博物馆ID、可选活动分类和活动类型查询启用且未删除的活动列表，包含活动场次。
      */
-    List<ActivityManage> findByMuseumId(Long museumId, Integer participationType);
+    List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId);
 }

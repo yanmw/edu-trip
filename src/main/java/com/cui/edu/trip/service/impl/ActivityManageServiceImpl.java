@@ -136,11 +136,14 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     }
 
     @Override
-    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType) {
+    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
         ew.eq(ActivityManage.MUSEUM_ID, museumId);
         if (participationType != null) {
             ew.eq(ActivityManage.PARTICIPATION_TYPE, participationType);
+        }
+        if (activityTypeId != null) {
+            ew.eq(ActivityManage.ACTIVITY_TYPE_ID, activityTypeId);
         }
         ew.eq(ActivityManage.STATUS, SysConstants.IS_TRUE);
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);

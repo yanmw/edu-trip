@@ -74,11 +74,24 @@ class ActivityManageServiceImplTest {
         when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
         ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
 
-        activityManageService.findByMuseumId(1L, ActivityManage.PARTICIPATION_TYPE_TEAM);
+        activityManageService.findByMuseumId(1L, ActivityManage.PARTICIPATION_TYPE_TEAM, null);
 
         ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(activityManageMapper).selectList(queryCaptor.capture());
         assertTrue(queryCaptor.getValue().getSqlSegment().contains("participation_type"));
+    }
+
+    @Test
+    void findByMuseumIdFiltersByActivityTypeIdWhenProvided() {
+        ActivityManageMapper activityManageMapper = mock(ActivityManageMapper.class);
+        when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
+        ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
+
+        activityManageService.findByMuseumId(1L, null, 2L);
+
+        ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(activityManageMapper).selectList(queryCaptor.capture());
+        assertTrue(queryCaptor.getValue().getSqlSegment().contains("activity_type_id"));
     }
 
     @Test
@@ -87,7 +100,7 @@ class ActivityManageServiceImplTest {
         when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
         ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
 
-        activityManageService.findByMuseumId(1L, null);
+        activityManageService.findByMuseumId(1L, null, null);
 
         ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(activityManageMapper).selectList(queryCaptor.capture());

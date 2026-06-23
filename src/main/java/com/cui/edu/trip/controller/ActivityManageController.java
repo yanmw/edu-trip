@@ -111,9 +111,11 @@ public class ActivityManageController {
     @SaIgnore
     public HttpResult findByMuseumId(@ApiParam(value = "博物馆ID") @RequestParam Long museumId,
                                      @ApiParam(value = "活动分类，1：团队；2：个人")
-                                     @RequestParam(required = false) Integer participationType) {
+                                     @RequestParam(required = false) Integer participationType,
+                                     @ApiParam(value = "活动类型ID")
+                                     @RequestParam(required = false) Long activityTypeId) {
         if (ObjectUtil.isNotEmpty(museumId)) {
-            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType);
+            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType, activityTypeId);
             return HttpResult.ok(activityManageList);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");

@@ -83,17 +83,20 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     }
 
     @Override
-    public String auditActivity(Long id) {
+    public String updateStatus(Long id, Integer status) {
+        if (!SysConstants.IS_TRUE.equals(status) && !SysConstants.IS_FALSE.equals(status)) {
+            return "活动状态参数有误";
+        }
         ActivityManage activityManage = super.getById(id);
         if (activityManage == null || SysConstants.IS_TRUE.equals(activityManage.getIsDeleted())) {
             return "活动不存在";
         }
-        if (SysConstants.IS_TRUE.equals(activityManage.getStatus())) {
+        if (status.equals(activityManage.getStatus())) {
             return null;
         }
         ActivityManage update = new ActivityManage();
         update.setId(id);
-        update.setStatus(SysConstants.IS_TRUE);
+        update.setStatus(status);
         super.updateById(update);
         return null;
     }

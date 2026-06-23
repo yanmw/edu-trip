@@ -9,6 +9,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.service.ActivityManageService;
+import com.cui.edu.vo.trip.ActivityManageStatusVO;
 import com.cui.edu.vo.trip.ActivityManageVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -66,11 +67,13 @@ public class ActivityManageController {
         }
     }
 
-    @PostMapping(value = "/audit/{id}")
-    @ApiOperation(value = "活动审核")
-    public HttpResult audit(@ApiParam(value = "活动ID") @PathVariable Long id) {
-        if (ObjectUtil.isNotEmpty(id)) {
-            String errorMsg = activityManageService.auditActivity(id);
+    @PostMapping(value = "/updateStatus")
+    @ApiOperation(value = "禁用/启用活动")
+    public HttpResult updateStatus(@ApiParam(value = "活动状态参数") @RequestBody ActivityManageStatusVO vo) {
+        if (ObjectUtil.isNotEmpty(vo)
+                && ObjectUtil.isNotEmpty(vo.getId())
+                && ObjectUtil.isNotEmpty(vo.getStatus())) {
+            String errorMsg = activityManageService.updateStatus(vo.getId(), vo.getStatus());
             if (errorMsg != null) {
                 return HttpResult.error(HttpStatus.SC_BAD_REQUEST, errorMsg);
             }

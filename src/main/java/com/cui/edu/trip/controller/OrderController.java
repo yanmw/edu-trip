@@ -139,7 +139,6 @@ public class OrderController {
     }
 
     @PostMapping(value = "/verification")
-    @SaIgnore
     @ApiOperation(value = "核销", response = JSONObject.class)
     public HttpResult verification(@RequestBody VerificationVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {

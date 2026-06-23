@@ -23,9 +23,9 @@ public interface ActivityManageService extends IService<ActivityManage> {
     String saveActivityManage(ActivityManage record);
 
     /**
-     * 审核通过活动，将活动状态置为启用。
+     * 更新活动启用状态，status=1启用，status=0禁用。
      */
-    String auditActivity(Long id);
+    String updateStatus(Long id, Integer status);
 
     /**
      * 分页查询未删除的活动。

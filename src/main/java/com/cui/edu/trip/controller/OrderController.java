@@ -144,7 +144,7 @@ public class OrderController {
         if (BeanUtil.isNotEmpty(vo)) {
             Map map = orderService.verification(vo);
             if (map.containsKey(SysConstants.MSG)) {
-                return HttpResult.ok(map.get(SysConstants.MSG).toString());
+                return HttpResult.error(map.get(SysConstants.MSG).toString());
             } else {
                 return HttpResult.ok();
             }

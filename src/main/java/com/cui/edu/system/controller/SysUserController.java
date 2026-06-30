@@ -23,8 +23,10 @@ import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -63,10 +65,19 @@ public class SysUserController {
         // 登录
         StpUtil.login(loginVO.getUsername(), loginVO.getLoginType());
         StpUtil.getSession().set("userId", user.getId());
-        // 获取 Token  相关参数
+        // 获取 Token 相关参数
         SaTokenInfo tokenInfo = StpUtil.getTokenInfo();
         tokenInfo.setTag(user.getId().toString());
-        return HttpResult.ok(tokenInfo);
+        // 查询用户角色ID列表
+        List<SysUserRole> userRoles = sysUserService.findUserRoles(user.getId());
+        List<Long> roleIds = userRoles.stream()
+                .map(SysUserRole::getRoleId)
+                .collect(Collectors.toList());
+        Map<String, Object> result = new HashMap<>();
+        result.put("tokenInfo", tokenInfo);
+        result.put("roleIds", roleIds);
+        result.put("museumId", user.getMuseumId());
+        return HttpResult.ok(result);
     }
 
     /**

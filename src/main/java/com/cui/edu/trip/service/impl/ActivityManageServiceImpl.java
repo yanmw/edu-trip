@@ -45,55 +45,86 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     @Autowired
     private MuseumService museumService;
 
+    /**
+     * 保存或更新活动信息
+     * <p>
+     * 业务规则：
+     * 1. 进行基础参数的完整性校验（validateRequiredFields）。
+     * 2. 校验参与形式（团队/个人）和适用年龄分组是否合法。
+     * 3. 区分新增与更新逻辑：
+     *    a. 新增活动：初始化状态为禁用 (status=0)，必须通过审核上架接口启用；若未设定删除标记，默认设为未删除。
+     *    b. 更新活动：校验只读属性是否被篡改（validateImmutableFields，如类型、单价、博物馆、排期时间均不可改，改之则需新建活动）；状态沿用原活动状态，防篡改。
+     * 4. 持久化活动信息，并同步更新该活动所属的场次排期列表 (saveActivitySchedules)。
+     *
+     * @param record 活动信息实体
+     * @return 业务校验通过返回 null，若校验不通过则返回具体的错误提示信息
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String saveActivityManage(ActivityManage record) {
+        // 1. 校验必填属性和关联场次数据
         String requiredFieldError = validateRequiredFields(record);
         if (requiredFieldError != null) {
             return requiredFieldError;
         }
+        // 2. 校验参与类别
         String participationTypeError = validateParticipationType(record);
         if (participationTypeError != null) {
             return participationTypeError;
         }
+        // 3. 校验人群年龄分类
         String ageGroupError = validateAgeGroup(record);
         if (ageGroupError != null) {
             return ageGroupError;
         }
+        // 4. 判断是新增还是修改
         if (record.getId() == null) {
-            // 新建活动默认禁用，必须通过审核接口启用。
+            // 4.1 新建活动默认处于禁用状态，由管理员审核后启用
             record.setStatus(SysConstants.IS_FALSE);
             if (record.getIsDeleted() == null) {
                 record.setIsDeleted(SysConstants.IS_FALSE);
             }
         } else {
+            // 4.2 校验只读字段：活动一旦建立并发布，其单价、博物馆、起止时间等不允许再修改，以保证历史订单的可追溯性
             ActivityManage oldActivityManage = super.getById(record.getId());
             String immutableFieldError = validateImmutableFields(oldActivityManage, record);
             if (immutableFieldError != null) {
                 return immutableFieldError;
             }
-            // 修改活动不能绕过审核流程变更状态，状态只由审核/删除等专用接口维护。
+            // 4.3 状态受专用审核接口管控，此处防修改时篡改状态
             if (oldActivityManage != null) {
                 record.setStatus(oldActivityManage.getStatus());
             }
         }
+        // 5. 保存活动并保存/更新关联的场次列表
         super.saveOrUpdate(record);
         saveActivitySchedules(record);
         return null;
     }
 
+    /**
+     * 更新活动状态（启用/下架禁用活动）
+     *
+     * @param id     活动主键 ID
+     * @param status 目标状态值：1 启用，0 禁用
+     * @return 校验通过并更新成功返回 null，否则返回具体的错误信息
+     */
     @Override
     public String updateStatus(Long id, Integer status) {
+        // 1. 状态参数值范围校验
         if (!SysConstants.IS_TRUE.equals(status) && !SysConstants.IS_FALSE.equals(status)) {
             return "活动状态参数有误";
         }
+        // 2. 校验目标活动是否存在
         ActivityManage activityManage = super.getById(id);
         if (activityManage == null || SysConstants.IS_TRUE.equals(activityManage.getIsDeleted())) {
             return "活动不存在";
         }
+        // 3. 状态一致时无需重复操作
         if (status.equals(activityManage.getStatus())) {
             return null;
         }
+        // 4. 更新上下架状态
         ActivityManage update = new ActivityManage();
         update.setId(id);
         update.setStatus(status);
@@ -101,40 +132,75 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         return null;
     }
 
+    /**
+     * 分页过滤查询活动列表
+     *
+     * @param vo 包含过滤及分页条件的视图对象
+     * @return 分页结果 PageResult 包装，已补充博物馆的显示名称
+     */
     @Override
     public PageResult findPage(ActivityManageVO vo) {
         Page<ActivityManage> page = new Page<>(vo.getPageNum(), vo.getPageSize());
+        // 1. 构建 MyBatis-Plus 查询 wrapper
         QueryWrapper<ActivityManage> ew = buildQueryWrapper(vo);
+        // 2. 分页查询
         page = super.page(page, ew);
+        // 3. 补充各记录对应的博物馆名称，供前台页面渲染
         fillMuseumNames(page.getRecords());
         return PageResultUtil.getPageResult(page);
     }
 
+    /**
+     * 批量逻辑删除活动
+     * <p>
+     * 业务流程：
+     * 1. 批量更新活动表的 is_deleted 标志为 1。
+     * 2. 活动被逻辑删除后，其名下绑定的所有活动场次 (ActivitySchedule) 均需同步置为禁用状态，防止被错误购买。
+     *
+     * @param ids 待逻辑删除的活动 ID 列表
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void logicDelete(List<Long> ids) {
         List<ActivityManage> activityManageList = new ArrayList<>();
+        // 1. 循环构建待逻辑删除的活动载荷
         for (Long id : ids) {
             ActivityManage activityManage = new ActivityManage();
             activityManage.setId(id);
             activityManage.setIsDeleted(SysConstants.IS_TRUE);
             activityManageList.add(activityManage);
         }
+        // 2. 执行批量删除更新
         super.updateBatchById(activityManageList);
-        // 活动删除后，场次不物理删除，只同步禁用。
+        // 3. 同步禁用该批活动关联的所有场次排期
         disableSchedulesByActivityIds(ids);
     }
 
+    /**
+     * 根据主键 ID 查询处于有效状态的活动详情，并填充激活的场次排期列表
+     *
+     * @param id 活动主键 ID
+     * @return 活动实体详情，若不存在或已被删除返回 null
+     */
     @Override
     public ActivityManage findById(Long id) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
         ew.eq(ActivityManage.ID, id);
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ActivityManage activityManage = super.getOne(ew);
+        // 补齐该活动关联的所有激活状态的排期场次
         fillActivitySchedules(activityManage);
         return activityManage;
     }
 
+    /**
+     * 查询指定博物馆名下可供预约的所有已上架活动列表（用于小程序等前端端展示）
+     *
+     * @param museumId           博物馆 ID
+     * @param participationType  可选：参与形式 (个人/团队)
+     * @param activityTypeId     可选：活动类型 ID
+     * @return 匹配的有效活动列表，且带排期场次详情
+     */
     @Override
     public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
@@ -145,10 +211,12 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (activityTypeId != null) {
             ew.eq(ActivityManage.ACTIVITY_TYPE_ID, activityTypeId);
         }
+        // 仅查询处于“已启用上架 (1)”且“未逻辑删除 (0)”状态的活动
         ew.eq(ActivityManage.STATUS, SysConstants.IS_TRUE);
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         List<ActivityManage> activityManageList = super.list(ew);
+        // 补齐每一个活动的排期场次数据
         fillActivitySchedules(activityManageList);
         return activityManageList;
     }

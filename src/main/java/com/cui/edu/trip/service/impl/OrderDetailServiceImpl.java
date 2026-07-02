@@ -42,16 +42,36 @@ public class OrderDetailServiceImpl extends ServiceImpl<OrderDetailMapper, Order
             OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue()
     );
 
+    /**
+     * 根据主订单 ID 查询其下关联的所有子订单（订单详情）列表
+     *
+     * @param orderId 主订单 ID
+     * @return 该主订单下的所有子订单详情列表
+     */
     @Override
     public List<OrderDetail> findByOrderId(String orderId) {
+        // 构造查询 Wrapper，按主订单 ID 进行过滤
         QueryWrapper<OrderDetail> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq(OrderDetail.ORDER_ID, orderId);
         return super.list(queryWrapper);
     }
 
+    /**
+     * 统计指定场次在特定日期下已经被占用的总名额数
+     * <p>
+     * 业务规则：
+     * 1. 该统计用于在下单时判断余票/剩余名额是否充足，避免超卖。
+     * 2. 只统计满足 BOOKED_ORDER_STATUSES（占名额的主订单状态）和 BOOKED_DETAIL_STATUSES（占名额的子订单状态）的订单。
+     *
+     * @param museumId           博物馆 ID
+     * @param activityId         活动 ID
+     * @param activityScheduleId 活动场次排期 ID
+     * @param appointmentDate    预约日期
+     * @return 已占用的名额总数 (通常等于已预订的门票/游客数量)
+     */
     @Override
     public int countBookedQuantity(Long museumId, Long activityId, Long activityScheduleId, LocalDate appointmentDate) {
-        // 统计已占用名额时，只统计还会占用场次容量的主订单和子订单状态。
+        // 传入有效的主订单和子订单状态集合，委托 mapper 执行 count 聚合查询
         return baseMapper.countBookedQuantity(museumId, activityId, activityScheduleId, appointmentDate,
                 BOOKED_ORDER_STATUSES, BOOKED_DETAIL_STATUSES);
     }

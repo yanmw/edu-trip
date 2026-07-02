@@ -99,16 +99,26 @@ public class UnionPayServiceImpl implements UnionPayService {
     }
 
     /**
-     * @param orderId       订单号
-     * @param targetOrderId 银联支付订单号
-     * @param money         退款金额
-     * @param mid           商户号
-     * @param tid           终端号
-     * @param refundOrderId 退款订单号
-     * @return 银联退款响应
+     * 发起银联退款申请
+     * <p>
+     * 业务流程：
+     * 1. 初始化银联退款报文请求体 AppletRefundBody。
+     * 2. 设置时间戳、系统主订单号 (merOrderId)、银联交易流水号 (targetOrderId)、退款金额 (以分为单位)、商户及终端信息、本地生成的退款流水号。
+     * 3. 将请求体序列化为 JSON 并记录日志。
+     * 4. 调用 postUnionPay 接口向银联退款地址发起 POST 请求，并捕获业务返回。
+     *
+     * @param orderId       本地主订单号
+     * @param targetOrderId 银联原始支付交易订单号
+     * @param money         退款金额（单位：分）
+     * @param mid           商户号 (Merchant ID)
+     * @param tid           终端号 (Terminal ID)
+     * @param refundOrderId 本地生成的本次退款唯一订单号
+     * @return 包含退款申请受理状态的 JSONObject 响应
+     * @throws Exception 网络连接或加密认证异常
      */
     @Override
     public JSONObject appletRefund(String orderId, String targetOrderId, Integer money, String mid, String tid, String refundOrderId) throws Exception {
+        // 1. 构建退款请求载荷
         AppletRefundBody body = new AppletRefundBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(orderId);
@@ -117,85 +127,129 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setMid(mid);
         body.setTid(tid);
         body.setRefundOrderId(refundOrderId);
+        
+        // 2. 报文日志记录，方便事后联调与排查
         String bodyStr = JSON.toJSONString(body);
         log.info("小程序退款请求报文json：{}", bodyStr);
+        
+        // 3. 发送请求并校验业务状态
         JSONObject jsonObject = postUnionPay(appletRefundUrl, bodyStr, "小程序退款");
         logUnionPayBusinessError("小程序退款", jsonObject);
         return jsonObject;
     }
 
     /**
-     * @param refundOrderId 退款订单号
+     * 发起银联退款查询
+     * <p>
+     * 用于主动查询某笔退款流水在银联侧的最终状态。
+     *
+     * @param refundOrderId 申请退款时传入的退款订单号
      * @param mid           商户号
      * @param tid           终端号
-     * @return 银联退款查询响应
+     * @return 包含退款状态详情的 JSONObject 响应
+     * @throws Exception 网络连接或加密认证异常
      */
     @Override
     public JSONObject appletRefundQuery(String refundOrderId, String mid, String tid) throws Exception {
+        // 1. 构建退款查询请求载荷
         AppletRefundQueryBody body = new AppletRefundQueryBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(refundOrderId);
         body.setMid(mid);
         body.setTid(tid);
+        
+        // 2. 报文日志记录
         String bodyStr = JSON.toJSONString(body);
         log.info("小程序退款查询请求报文json：{}", bodyStr);
+        
+        // 3. 发送查询请求
         JSONObject jsonObject = postUnionPay(appletRefundQueryUrl, bodyStr, "小程序退款查询");
         logUnionPayBusinessError("小程序退款查询", jsonObject);
         return jsonObject;
     }
 
     /**
-     * @param orderId 订单号
+     * 发起银联支付状态查询
+     * <p>
+     * 在用户支付完成但未收到异步回调，或需要核对支付结果时，调用此方法主动向银联确认订单支付状态。
+     *
+     * @param orderId 待查询的本地主订单号
      * @param mid     商户号
      * @param tid     终端号
-     * @return 银联支付查询响应
+     * @return 包含支付状态的 JSONObject 响应
+     * @throws Exception 网络连接或加密认证异常
      */
     @Override
     public JSONObject appletQuery(String orderId, String mid, String tid) throws Exception {
+        // 1. 构建查询请求载荷
         AppletQueryBody body = new AppletQueryBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(orderId);
         body.setMid(mid);
         body.setTid(tid);
+        
+        // 2. 报文日志记录
         String bodyStr = JSON.toJSONString(body);
         log.info("小程序支付查询请求报文json：{}", bodyStr);
+        
+        // 3. 发送查询请求
         JSONObject jsonObject = postUnionPay(appletQueryUrl, bodyStr, "小程序支付查询");
         logUnionPayBusinessError("小程序支付查询", jsonObject);
         return jsonObject;
     }
 
     /**
-     * @param orderId 订单号
+     * 关闭银联待支付订单
+     * <p>
+     * 当订单超时未支付，或者用户主动放弃支付时，调用银联关单接口，避免用户在系统超时后仍然能够支付成功。
+     *
+     * @param orderId 待关闭的本地主订单号
      * @param mid     商户号
      * @param tid     终端号
-     * @return 银联关单响应
+     * @return 包含关单结果的 JSONObject 响应
+     * @throws Exception 网络连接或加密认证异常
      */
     @Override
     public JSONObject appletClose(String orderId, String mid, String tid) throws Exception {
+        // 1. 构建关单请求载荷
         AppletCloseBody body = new AppletCloseBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(orderId);
         body.setMid(mid);
         body.setTid(tid);
+        
+        // 2. 报文日志记录
         String bodyStr = JSON.toJSONString(body);
         log.info("小程序订单关闭请求报文json：{}", bodyStr);
+        
+        // 3. 发送关单请求
         JSONObject jsonObject = postUnionPay(appletCloseUrl, bodyStr, "小程序订单关闭");
         logUnionPayBusinessError("小程序订单关闭", jsonObject);
         return jsonObject;
     }
 
     /**
-     * @param orderId    订单号
-     * @param money      支付金额
+     * 向银联发起微信小程序下单请求，并返回用于微信小程序拉起支付的参数
+     * <p>
+     * 业务流程：
+     * 1. 组装微信小程序支付请求载荷 AppletPayBody。
+     * 2. 传入系统分配的通知回调地址 notifyUrl。
+     * 3. 发起请求并进行严格的业务成功校验（若 errCode != SUCCESS，则直接抛出异常中断下单）。
+     * 4. 提取银联返回的微信支付专用参数（miniPayRequest，内含微信支付所需的 timestamp、nonceStr、package、signType、paySign）。
+     *
+     * @param orderId    本地生成的唯一主订单号
+     * @param money      实付总金额（单位：分）
      * @param mid        商户号
      * @param tid        终端号
-     * @param subOpenId  微信用户openId
-     * @param srcReserve 银联备用字段
-     * @param subAppId   微信小程序appId
-     * @return 微信小程序支付参数
+     * @param subOpenId  微信用户的 subOpenId（支付用户在当前小程序下的 openid）
+     * @param srcReserve 银联渠道透传备用字段（可用于回传特定标识）
+     * @param subAppId   微信小程序的 AppID
+     * @return 序列化后的微信拉起支付参数字符串 (即 miniPayRequest JSONObject)
+     * @throws Exception 下单失败或银联返回参数不合规异常
      */
     @Override
     public String wechatAppletPay(String orderId, Integer money, String mid, String tid, String subOpenId, String srcReserve, String subAppId) throws Exception {
+        // 1. 构建小程序微信支付请求体
         AppletPayBody body = new AppletPayBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(orderId);
@@ -205,11 +259,19 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setSubOpenId(subOpenId);
         body.setSubAppId(subAppId);
         body.setSrcReserve(srcReserve);
-        body.setNotifyUrl(notifyUrl);
+        body.setNotifyUrl(notifyUrl); // 写入回调通知地址
+        
+        // 2. 报文日志记录
         String bodyStr = JSON.toJSONString(body);
         log.info("小程序支付请求报文json：{}", bodyStr);
+        
+        // 3. 发送支付下单请求
         JSONObject jsonObject = postUnionPay(appletPayUrl, bodyStr, "小程序支付");
+        
+        // 4. 严格断言交易成功
         ensureUnionPaySuccess("小程序支付", jsonObject);
+        
+        // 5. 获取并返回微信端所需支付调起包
         JSONObject miniPayRequest = jsonObject.getJSONObject("miniPayRequest");
         if (miniPayRequest == null || miniPayRequest.isEmpty()) {
             throw new RuntimeException("银联小程序支付下单失败，miniPayRequest为空");
@@ -218,16 +280,20 @@ public class UnionPayServiceImpl implements UnionPayService {
     }
 
     /**
-     * @param orderId    订单号
-     * @param money      支付金额
+     * 向银联发起支付宝小程序下单请求，并返回银联的订单号
+     *
+     * @param orderId    本地主订单号
+     * @param money      总金额（单位：分）
      * @param mid        商户号
      * @param tid        终端号
-     * @param userId     支付宝userId
-     * @param srcReserve 银联备用字段
-     * @return 支付宝小程序支付订单号
+     * @param userId     支付宝买家用户 ID (userId)
+     * @param srcReserve 银联渠道透传备用字段
+     * @return 银联交易系统的原始交易订单号 (targetOrderId)
+     * @throws Exception 下单失败或银联返回异常
      */
     @Override
     public String aliPayAppletPay(String orderId, Integer money, String mid, String tid, String userId, String srcReserve) throws Exception {
+        // 1. 构建支付宝小程序支付请求体
         AppletPayBody body = new AppletPayBody();
         body.setRequestTimestamp(DateTimeUtils.getLocalDateTimeString());
         body.setMerOrderId(orderId);
@@ -237,9 +303,15 @@ public class UnionPayServiceImpl implements UnionPayService {
         body.setUserId(userId);
         body.setSrcReserve(srcReserve);
         body.setNotifyUrl(notifyUrl);
+        
+        // 2. 报文日志记录
         String bodyStr = JSON.toJSONString(body);
         log.info("支付宝小程序支付请求报文json：{}", bodyStr);
+        
+        // 3. 发送请求
         JSONObject jsonObject = postUnionPay(aliPayAppletPayUrl, bodyStr, "支付宝小程序支付");
+        
+        // 4. 校验响应状态并提取订单流水号
         ensureUnionPaySuccess("支付宝小程序支付", jsonObject);
         String targetOrderId = jsonObject.getString("targetOrderId");
         if (targetOrderId == null || targetOrderId.trim().isEmpty()) {

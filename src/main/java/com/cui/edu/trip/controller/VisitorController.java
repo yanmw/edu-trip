@@ -7,6 +7,7 @@ import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
+import com.cui.edu.config.exception.MyException;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.service.VisitorService;
 import com.cui.edu.util.Log;
@@ -48,19 +49,52 @@ public class VisitorController {
     @Autowired
     private VisitorService visitorService;
 
+    /**
+     * 新增或修改游客信息。
+     * <p>
+     * 处理流程：
+     * <ol>
+     *   <li>校验手机号格式（必填，1[3-9]开头11位）</li>
+     *   <li>校验身份证格式（可选，传入时校验15/18位格式、出生日期、地址码及校验码）</li>
+     *   <li>校验博物馆ID是否存在</li>
+     *   <li>若 wechatOpenid 已绑定未删除记录，则复用其主键执行更新，而非新增</li>
+     *   <li>根据身份证或手机号号段自动补全省市和性别</li>
+     *   <li>若为新增且 wechatOpenid 曾被软删除，则恢复该记录</li>
+     * </ol>
+     * 校验失败时不抛全局异常，直接在响应体中返回错误信息，便于前端展示。
+     * </p>
+     * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore），供小程序端直接调用。
+     */
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改游客")
     @SaIgnore
     @Log(title = "新增/修改游客")
     public HttpResult save(@RequestBody Visitor record) {
+        // record 为空对象时直接拒绝，避免无意义的下游调用
         if (BeanUtil.isNotEmpty(record)) {
-            visitorService.saveVisitor(record);
+            try {
+                visitorService.saveVisitor(record);
+            } catch (MyException e) {
+                // 业务校验失败（如手机号格式错误、博物馆不存在等），直接返回错误信息给前端
+                // 不向上抛出，避免触发全局异常处理器返回 500
+                return HttpResult.error(e.getCode(), e.getMessage());
+            }
+            // 保存成功后返回游客主键 ID，供前端后续使用
             return HttpResult.ok(record.getId());
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
     }
 
+    /**
+     * 通过 Excel 批量导入游客。
+     * <p>
+     * Excel 必须包含且仅包含"姓名、手机号、身份证号"三列（顺序不限）。
+     * 每行数据均会校验手机号和身份证格式，并自动补全省市和性别。
+     * 导入成功后返回实际入库的行数。
+     * </p>
+     * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore），供小程序端直接调用。
+     */
     @PostMapping(value = "/importExcel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ApiOperation(value = "Excel导入游客")
     @SaIgnore
@@ -68,18 +102,29 @@ public class VisitorController {
     public HttpResult importExcel(@ApiParam(value = "Excel文件", required = true) @RequestParam("file") MultipartFile file,
                                   @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId,
                                   @ApiParam(value = "游客批次号") @RequestParam(value = "batchNo", required = false) String batchNo) {
+        // 文件和团队ID均为必填，缺一不可
         if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
+        // 返回实际导入成功的行数（表头不计入）
         int count = visitorService.importExcel(file, teamId, batchNo);
         return HttpResult.ok(count);
     }
 
+    /**
+     * 下载游客导入 Excel 模板。
+     * <p>
+     * 返回包含"姓名、手机号、身份证号"表头的空白 xlsx 文件，
+     * 文件名经 RFC 5987 编码，兼容主流浏览器的中文文件名下载。
+     * </p>
+     * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore）。
+     */
     @GetMapping(value = "/downloadTemplate")
     @ApiOperation(value = "下载游客导入模板")
     @SaIgnore
     public ResponseEntity<byte[]> downloadTemplate() {
         byte[] data = visitorService.getImportTemplate();
+        // 对中文文件名做 RFC 5987 编码，避免部分浏览器下载时文件名乱码
         String fileName = encodeFileName("游客导入模板.xlsx");
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
@@ -87,6 +132,12 @@ public class VisitorController {
                 .body(data);
     }
 
+    /**
+     * 批量逻辑删除游客（软删除，仅将 is_deleted 置为 1）。
+     * <p>
+     * 请求体为游客主键 ID 列表，列表不能为空。
+     * </p>
+     */
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除游客")
     @Log(title = "删除游客")
@@ -99,6 +150,14 @@ public class VisitorController {
         }
     }
 
+    /**
+     * 分页查询未删除的游客列表。
+     * <p>
+     * 支持按姓名（模糊）、手机号（模糊）、身份证（模糊）、微信 openid（精确）、
+     * 博物馆 ID、省份、城市、性别、团队 ID、批次号等条件组合过滤，
+     * 结果按主键倒序排列。
+     * </p>
+     */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "游客查询-分页")
     public HttpResult findPage(@RequestBody VisitorVO vo) {
@@ -110,6 +169,14 @@ public class VisitorController {
         }
     }
 
+    /**
+     * 根据团队 ID 查询该团队下未删除的游客列表。
+     * <p>
+     * batchNo（批次号）为可选参数，传入时在团队范围内进一步按批次过滤。
+     * 结果按主键倒序排列。
+     * </p>
+     * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore），供小程序端直接调用。
+     */
     @GetMapping(value = "/findByTeamId")
     @ApiOperation(value = "根据团队ID查询游客列表")
     @SaIgnore
@@ -123,6 +190,14 @@ public class VisitorController {
         }
     }
 
+    /**
+     * 根据微信 openid 查询未删除的游客详情。
+     * <p>
+     * 若同一 openid 存在多条记录（异常情况），取主键最大的一条。
+     * 未找到时返回 null，前端需自行判断。
+     * </p>
+     * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore），供小程序端直接调用。
+     */
     @GetMapping(value = "/findByWechatOpenid/{wechatOpenid}")
     @ApiOperation(value = "根据微信openid查询游客详情")
     @SaIgnore
@@ -135,10 +210,15 @@ public class VisitorController {
         }
     }
 
+    /**
+     * 将文件名编码为 RFC 5987 格式，避免中文文件名在 HTTP 头中乱码。
+     * URLEncoder 默认将空格编码为 "+"，需替换为 "%20" 以符合 RFC 规范。
+     */
     private String encodeFileName(String fileName) {
         try {
             return URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20");
         } catch (UnsupportedEncodingException e) {
+            // UTF-8 在所有 JVM 中均受支持，此处理论上不会触发
             return fileName;
         }
     }

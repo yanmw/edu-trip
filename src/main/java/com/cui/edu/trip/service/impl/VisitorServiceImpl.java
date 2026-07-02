@@ -50,21 +50,29 @@ import java.util.regex.Pattern;
 @Service
 public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> implements VisitorService {
 
+    /** Excel 导入模板表头（固定顺序） */
     private static final List<String> IMPORT_TEMPLATE_HEADERS = Arrays.asList("姓名", "手机号", "身份证号");
 
+    /** Excel 导入必须包含的字段集合（用于表头校验） */
     private static final Set<String> IMPORT_REQUIRED_FIELDS = new HashSet<>(Arrays.asList("name", "mobile", "idCard"));
 
+    /** 手机号正则：1[3-9] 开头，共 11 位数字 */
     private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
 
+    /** 15 位身份证正则：全数字 */
     private static final Pattern ID_CARD_15_PATTERN = Pattern.compile("^\\d{15}$");
 
+    /** 18 位身份证正则：前 17 位数字 + 末位数字或 X */
     private static final Pattern ID_CARD_18_PATTERN = Pattern.compile("^\\d{17}[0-9Xx]$");
 
+    /** 严格日期格式化器，用于校验身份证中的出生日期（拒绝不合法日期如 0229） */
     private static final DateTimeFormatter STRICT_DATE_FORMATTER = DateTimeFormatter.ofPattern("uuuuMMdd")
             .withResolverStyle(ResolverStyle.STRICT);
 
+    /** 18 位身份证加权因子（GB 11643-1999） */
     private static final int[] ID_CARD_WEIGHT = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
 
+    /** 18 位身份证校验码对照表，下标为加权和对 11 取模的结果 */
     private static final char[] ID_CARD_CHECK_CODE = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
 
     @Autowired
@@ -76,6 +84,21 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
     @Autowired
     private AdministrativeDivisionService administrativeDivisionService;
 
+    /**
+     * 保存游客信息（新增或修改）。
+     * <p>
+     * 执行顺序：
+     * <ol>
+     *   <li>{@link #validateMobile} — 手机号非空且格式合法</li>
+     *   <li>{@link #validateIdCardFormat} — 身份证可为空；不为空时校验格式、出生日期、地址码、校验码</li>
+     *   <li>{@link #validateIdCardByMuseumConfig} — 博物馆 ID 非空且存在</li>
+     *   <li>{@link #mergeExistingVisitorByOpenid} — wechatOpenid 已绑定记录时复用其主键，转为更新</li>
+     *   <li>{@link #fillProvinceCityAndGender} — 自动补全省市和性别</li>
+     *   <li>{@link #restoreDeletedVisitor} — 新增时若 openid 曾被软删除则恢复，不再插入新行</li>
+     *   <li>saveOrUpdate — 执行最终的新增或更新操作</li>
+     * </ol>
+     * </p>
+     */
     @Override
     public void saveVisitor(Visitor record) {
         validateMobile(record.getMobile());
@@ -83,17 +106,28 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         validateIdCardByMuseumConfig(record);
         // 若 wechat_openid 已存在，则合并到已有记录（更新）而非报错
         mergeExistingVisitorByOpenid(record);
-        // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知。
+        // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知
         fillProvinceCityAndGender(record);
         if (record.getId() == null && record.getIsDeleted() == null) {
             record.setIsDeleted(SysConstants.IS_FALSE);
         }
+        // 新增时检查 openid 是否曾被软删除，是则恢复已有记录而非插入新行
         if (record.getId() == null && restoreDeletedVisitor(record)) {
             return;
         }
         super.saveOrUpdate(record);
     }
 
+    /**
+     * 通过 Excel 批量导入游客。
+     * <p>
+     * 校验规则与 saveVisitor 保持一致（手机号、身份证格式），
+     * 但不校验 wechatOpenid 唯一性（Excel 导入场景不涉及微信绑定）。
+     * 所有行校验通过后才执行批量插入，任意行校验失败均会中断整个导入。
+     * </p>
+     *
+     * @return 实际导入的行数
+     */
     @Override
     public int importExcel(MultipartFile file, Long teamId, String batchNo) {
         if (file == null || file.isEmpty()) {
@@ -101,6 +135,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
 
         try (ExcelReader reader = ExcelUtil.getReader(file.getInputStream())) {
+            // 校验表头：必须且只能包含姓名、手机号、身份证号
             validateImportHeaders(reader.readRow(0));
             addHeaderAlias(reader);
             List<Visitor> visitorList = reader.readAll(Visitor.class);
@@ -108,13 +143,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
                 return 0;
             }
             for (Visitor visitor : visitorList) {
+                // 清除 Excel 中可能携带的 id，确保以新增方式入库
                 visitor.setId(null);
                 visitor.setTeamId(teamId);
                 visitor.setBatchNo(batchNo);
                 visitor.setIsDeleted(SysConstants.IS_FALSE);
                 validateMobile(visitor.getMobile());
                 validateIdCardFormat(visitor.getIdCard());
-                // Excel导入沿用同一套游客信息补齐规则。
+                // Excel 导入沿用同一套游客信息补齐规则
                 fillProvinceCityAndGender(visitor);
             }
             super.saveBatch(visitorList);
@@ -124,6 +160,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 生成游客导入 Excel 模板（仅含表头，无数据行）。
+     */
     @Override
     public byte[] getImportTemplate() {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -137,6 +176,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return outputStream.toByteArray();
     }
 
+    /**
+     * 分页查询未删除的游客。
+     * <p>
+     * 所有条件均为可选，不传则不过滤该字段。
+     * 姓名、手机号、身份证号使用模糊匹配；其余字段精确匹配。
+     * 结果按主键倒序排列（最新入库的在前）。
+     * </p>
+     */
     @Override
     public PageResult findPage(VisitorVO vo) {
         Page<Visitor> page = new Page<>(vo.getPageNum(), vo.getPageSize());
@@ -177,6 +224,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return PageResultUtil.getPageResult(page);
     }
 
+    /**
+     * 批量逻辑删除游客（软删除）。
+     * <p>
+     * 仅将 is_deleted 字段置为 1，不物理删除数据，
+     * 保留历史记录供审计追溯。
+     * </p>
+     */
     @Override
     public void logicDelete(List<Long> ids) {
         List<Visitor> visitorList = new ArrayList<>();
@@ -189,6 +243,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         super.updateBatchById(visitorList);
     }
 
+    /**
+     * 根据微信 openid 查询未删除的游客详情。
+     * <p>
+     * 若存在多条记录（数据异常），取主键最大的一条（最新记录）。
+     * 未找到时返回 null。
+     * </p>
+     */
     @Override
     public Visitor findByWechatOpenid(String wechatOpenid) {
         QueryWrapper<Visitor> ew = new QueryWrapper<>();
@@ -199,6 +260,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return super.getOne(ew);
     }
 
+    /**
+     * 根据团队 ID 和批次号查询未删除的游客列表。
+     * <p>
+     * batchNo 为空时查询该团队下全部游客；不为空时按批次过滤。
+     * 结果按主键倒序排列。
+     * </p>
+     */
     @Override
     public List<Visitor> findByTeamId(Long teamId, String batchNo) {
         QueryWrapper<Visitor> ew = new QueryWrapper<>();
@@ -211,9 +279,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return super.list(ew);
     }
 
+    // ==================== 私有辅助方法 ====================
+
     /**
      * 若 wechat_openid 已绑定另一条未删除记录，则将该记录的 id 赋给 record，
      * 使后续 saveOrUpdate 执行 UPDATE 而不是 INSERT，避免重复 openid 报错。
+     * <p>
+     * 场景：小程序用户重新填写资料时，openid 已存在，直接更新而非新增。
+     * </p>
      */
     private void mergeExistingVisitorByOpenid(Visitor record) {
         if (StringUtils.isBlank(record.getWechatOpenid())) {
@@ -223,6 +296,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         ew.eq(Visitor.WECHAT_OPENID, record.getWechatOpenid());
         ew.eq(Visitor.IS_DELETED, SysConstants.IS_FALSE);
         if (record.getId() != null) {
+            // 修改时排除自身，避免误判
             ew.ne(Visitor.ID, record.getId());
         }
         ew.orderByDesc(Visitor.ID);
@@ -234,6 +308,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 新增场景下，若 wechat_openid 已存在于软删除记录，则恢复该记录（而非插入新行）。
+     * <p>
+     * 恢复逻辑：复用原记录主键，将 is_deleted 置回 0，其余字段以传入数据覆盖。
+     * </p>
+     *
+     * @return true 表示已恢复软删除记录，调用方无需再执行 saveOrUpdate
+     */
     private boolean restoreDeletedVisitor(Visitor record) {
         if (StringUtils.isBlank(record.getWechatOpenid())) {
             return false;
@@ -248,6 +330,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return true;
     }
 
+    /**
+     * 根据 wechat_openid 查询已软删除的游客记录（is_deleted = 1）。
+     * 若存在多条，取主键最大的一条。
+     */
     private Visitor findDeletedByWechatOpenid(String wechatOpenid) {
         QueryWrapper<Visitor> ew = new QueryWrapper<>();
         ew.eq(Visitor.WECHAT_OPENID, wechatOpenid);
@@ -257,6 +343,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return super.getOne(ew);
     }
 
+    /**
+     * 校验手机号：不能为空，且必须符合大陆手机号格式（1[3-9]开头，共 11 位）。
+     */
     private void validateMobile(String mobile) {
         if (StringUtils.isBlank(mobile)) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号不能为空");
@@ -266,11 +355,23 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 校验身份证格式（身份证可为空，为空时直接跳过）。
+     * <p>
+     * 校验内容：
+     * <ul>
+     *   <li>15 位：全数字 + 出生日期合法 + 地址码存在</li>
+     *   <li>18 位：前 17 位数字末位数字或X + 出生日期合法 + 地址码存在 + 校验码正确</li>
+     *   <li>其他长度或格式：直接报错</li>
+     * </ul>
+     * </p>
+     */
     private void validateIdCardFormat(String idCard) {
         if (StringUtils.isBlank(idCard)) {
             return;
         }
         if (ID_CARD_15_PATTERN.matcher(idCard).matches()) {
+            // 15 位身份证出生年份补全为 19xx
             validateIdCardBirthDate("19" + idCard.substring(6, 12));
             validateIdCardAddressCode(idCard.substring(0, 6));
             return;
@@ -284,6 +385,11 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号格式不正确");
     }
 
+    /**
+     * 校验身份证中的出生日期是否为合法日期（使用严格模式，拒绝如 20000229 等不合法日期）。
+     *
+     * @param birthDate 格式为 yyyyMMdd 的出生日期字符串
+     */
     private void validateIdCardBirthDate(String birthDate) {
         try {
             LocalDate.parse(birthDate, STRICT_DATE_FORMATTER);
@@ -292,6 +398,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 校验 18 位身份证的校验码（GB 11643-1999 算法）。
+     * <p>
+     * 算法：前 17 位按加权因子加权求和，对 11 取模，查对照表得预期校验码，
+     * 与第 18 位比较（不区分大小写）。
+     * </p>
+     */
     private void validateIdCardCheckCode(String idCard) {
         int sum = 0;
         for (int i = 0; i < ID_CARD_WEIGHT.length; i++) {
@@ -303,6 +416,11 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 校验身份证地址码前 6 位对应的省级行政区是否存在于行政区划表中。
+     *
+     * @param addressCode 身份证前 6 位地址码
+     */
     private void validateIdCardAddressCode(String addressCode) {
         String provinceCode = addressCode.substring(0, 2) + "0000";
         if (getAdministrativeDivision(provinceCode) == null) {
@@ -310,7 +428,15 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 校验博物馆 ID 是否合法（修改时允许从已有记录中取 museumId）。
+     * <p>
+     * 校验内容：museumId 不能为空，且对应博物馆必须存在。
+     * 不再强制要求身份证非空，身份证是否必填由调用方或前端控制。
+     * </p>
+     */
     private void validateIdCardByMuseumConfig(Visitor record) {
+        // 修改时若未传 museumId，从已有记录中补充
         Visitor oldVisitor = record.getId() == null ? null : super.getById(record.getId());
         Long museumId = record.getMuseumId() != null
                 ? record.getMuseumId()
@@ -324,6 +450,16 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 自动补全游客的省市和性别。
+     * <p>
+     * 优先级：身份证 > 手机号号段。
+     * <ul>
+     *   <li>有身份证：从身份证地址码解析省市，不足时用手机号号段补充；从顺序码解析性别</li>
+     *   <li>无身份证：从手机号号段解析省市；性别置为"未知"</li>
+     * </ul>
+     * </p>
+     */
     private void fillProvinceCityAndGender(Visitor record) {
         String idCard = record.getIdCard();
         if (StringUtils.isBlank(idCard)) {
@@ -332,16 +468,23 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             return;
         }
         fillProvinceAndCityByIdCard(record, idCard);
+        // 身份证地址码未能匹配到省市时，降级到手机号号段
         fillMissingProvinceAndCityByMobile(record);
         if (idCard.length() == 18) {
-            // 18位身份证第17位为性别顺序码，奇数男、偶数女。
+            // 18 位身份证第 17 位为性别顺序码，奇数男、偶数女
             setGender(record, idCard.charAt(16));
         } else if (idCard.length() == 15) {
-            // 15位身份证第15位为性别顺序码。
+            // 15 位身份证第 15 位为性别顺序码
             setGender(record, idCard.charAt(14));
         }
     }
 
+    /**
+     * 从身份证地址码（前 6 位）解析省份和城市名称并写入 record。
+     * <p>
+     * 直辖市（京津沪渝）无独立地市级行政区，城市名与省份名相同。
+     * </p>
+     */
     private void fillProvinceAndCityByIdCard(Visitor record, String idCard) {
         if (idCard.length() < 6) {
             return;
@@ -357,10 +500,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (city != null && StringUtils.isNotBlank(city.getName())) {
             record.setCity(city.getName());
         } else if (province != null && isMunicipality(province.getName())) {
+            // 直辖市无独立城市行政区，城市取省份名
             record.setCity(province.getName());
         }
     }
 
+    /**
+     * 当省或市字段仍为空时，用手机号前 7 位号段补充省市信息（仅补空缺字段）。
+     */
     private void fillMissingProvinceAndCityByMobile(Visitor record) {
         String mobile = record.getMobile();
         if (StringUtils.isBlank(mobile) || mobile.length() < 7) {
@@ -380,12 +527,20 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 根据身份证性别顺序码（奇数男、偶数女）设置 gender 字段。
+     *
+     * @param genderCode 身份证性别顺序码字符
+     */
     private void setGender(Visitor record, char genderCode) {
         if (genderCode >= '0' && genderCode <= '9') {
             record.setGender((genderCode - '0') % 2 == 1 ? Visitor.GENDER_MALE : Visitor.GENDER_FEMALE);
         }
     }
 
+    /**
+     * 无身份证时，直接用手机号前 7 位号段查询并写入省市信息。
+     */
     private void fillProvinceAndCityByMobile(Visitor record) {
         String mobile = record.getMobile();
         if (StringUtils.isBlank(mobile) || mobile.length() < 7) {
@@ -402,17 +557,32 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 根据行政区划代码查询行政区划信息。
+     *
+     * @param code 行政区划代码（如 "110000" 代表北京市）
+     */
     private AdministrativeDivision getAdministrativeDivision(String code) {
         QueryWrapper<AdministrativeDivision> ew = new QueryWrapper<>();
         ew.eq(AdministrativeDivision.CODE, code);
         return administrativeDivisionService.getOne(ew);
     }
 
+    /**
+     * 判断省份是否为直辖市（北京、天津、上海、重庆）。
+     * 直辖市无独立地市级行政区，解析城市时城市名与省份名相同。
+     */
     private boolean isMunicipality(String provinceName) {
         return "北京市".equals(provinceName) || "天津市".equals(provinceName)
                 || "上海市".equals(provinceName) || "重庆市".equals(provinceName);
     }
 
+    /**
+     * 为 ExcelReader 注册表头别名，支持中英文表头混用。
+     * <p>
+     * 映射关系：姓名/name → name，手机号/mobile → mobile，身份证号/身份证/idCard → idCard
+     * </p>
+     */
     private void addHeaderAlias(ExcelReader reader) {
         reader.addHeaderAlias("姓名", "name");
         reader.addHeaderAlias("name", "name");
@@ -423,6 +593,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         reader.addHeaderAlias("idCard", "idCard");
     }
 
+    /**
+     * 校验 Excel 表头：必须且只能包含"姓名、手机号、身份证号"三列（不区分中英文，顺序不限）。
+     * <p>
+     * 空白列会被忽略；出现未知列或列数不足时均报错。
+     * </p>
+     */
     private void validateImportHeaders(List<Object> headers) {
         if (headers == null || headers.isEmpty()) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel表头不能为空");
@@ -447,6 +623,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
     }
 
+    /**
+     * 将 Excel 表头文字转换为对应的实体字段名，不匹配时返回 null。
+     */
     private String convertHeaderToFieldName(String header) {
         if ("手机号".equals(header) || "mobile".equals(header)) {
             return "mobile";

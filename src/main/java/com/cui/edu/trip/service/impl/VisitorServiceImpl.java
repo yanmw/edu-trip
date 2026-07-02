@@ -22,7 +22,6 @@ import com.cui.edu.trip.service.MobileNumberSegmentService;
 import com.cui.edu.trip.service.VisitorService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.vo.trip.VisitorVO;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,7 +81,8 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         validateMobile(record.getMobile());
         validateIdCardFormat(record.getIdCard());
         validateIdCardByMuseumConfig(record);
-        validateWechatOpenidUnique(record);
+        // 若 wechat_openid 已存在，则合并到已有记录（更新）而非报错
+        mergeExistingVisitorByOpenid(record);
         // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知。
         fillProvinceCityAndGender(record);
         if (record.getId() == null && record.getIsDeleted() == null) {
@@ -91,11 +91,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (record.getId() == null && restoreDeletedVisitor(record)) {
             return;
         }
-        try {
-            super.saveOrUpdate(record);
-        } catch (DuplicateKeyException e) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "微信openid已存在");
-        }
+        super.saveOrUpdate(record);
     }
 
     @Override
@@ -215,7 +211,11 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         return super.list(ew);
     }
 
-    private void validateWechatOpenidUnique(Visitor record) {
+    /**
+     * 若 wechat_openid 已绑定另一条未删除记录，则将该记录的 id 赋给 record，
+     * 使后续 saveOrUpdate 执行 UPDATE 而不是 INSERT，避免重复 openid 报错。
+     */
+    private void mergeExistingVisitorByOpenid(Visitor record) {
         if (StringUtils.isBlank(record.getWechatOpenid())) {
             return;
         }
@@ -225,8 +225,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         if (record.getId() != null) {
             ew.ne(Visitor.ID, record.getId());
         }
-        if (super.count(ew) > 0) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "微信openid已存在");
+        ew.orderByDesc(Visitor.ID);
+        ew.last("limit 1");
+        Visitor existing = super.getOne(ew);
+        if (existing != null) {
+            // openid 已存在，复用已有记录的主键，后续变为更新操作
+            record.setId(existing.getId());
         }
     }
 
@@ -317,13 +321,6 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         Museum museum = museumService.getById(museumId);
         if (museum == null) {
             throw new MyException(HttpStatus.SC_BAD_REQUEST, "博物馆不存在");
-        }
-        // 未配置时按启用处理，避免老数据默认放开身份证校验。
-        boolean idCardVerifyEnabled = museum.getIdCardVerifyEnabled() == null
-                || SysConstants.IS_TRUE.equals(museum.getIdCardVerifyEnabled());
-        String idCard = record.getIdCard() == null && oldVisitor != null ? oldVisitor.getIdCard() : record.getIdCard();
-        if (idCardVerifyEnabled && StringUtils.isBlank(idCard)) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号不能为空");
         }
     }
 

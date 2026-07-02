@@ -76,7 +76,7 @@ public class UnionPayServiceImpl implements UnionPayService {
     private static final int MAX_PER_ROUTE = 50;                 // 每个目标主机最大连接数
     private static final int CONNECT_TIMEOUT = 5000;             // 连接建立超时（毫秒）
     private static final int CONNECTION_REQUEST_TIMEOUT = 3000;  // 从连接池获取连接超时
-    private static final int SOCKET_TIMEOUT = 10000;             // 数据传输超时
+    private static final int SOCKET_TIMEOUT = 30000;             // 数据传输超时（30秒，兼容银联退款查询慢响应）
 
     private static final PoolingHttpClientConnectionManager connManager;
 

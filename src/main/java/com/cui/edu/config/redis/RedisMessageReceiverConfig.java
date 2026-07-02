@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.net.SocketTimeoutException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -49,6 +50,14 @@ public class RedisMessageReceiverConfig {
         scheduledExecutorService.schedule(() -> {
             try {
                 unionRefundQuery(message);
+            } catch (SocketTimeoutException e) {
+                // 网络超时属于临时故障，重新投递消息到队列对下一轮查询，防止订单长期停留在退款中状态
+                log.warn("银联退款查询请求超时，重新投递消息等待下一轮延迟查询，消息：{}", message, e);
+                try {
+                    redisUtils.convertAndSend("mq_union_refund_query", message);
+                } catch (Exception re) {
+                    log.error("重新投递银联退款查询消息失败，消息：{}", message, re);
+                }
             } catch (Exception e) {
                 log.error("银联退款查询补偿处理失败，消息：{}", message, e);
             }

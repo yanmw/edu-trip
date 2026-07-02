@@ -1282,9 +1282,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 && !Order.OrderStatusEnum.PARTIAL_REFUND.getValue().equals(order.getOrderStatus())) {
             return "订单当前状态不允许退款";
         }
-        if (SysConstants.IS_TRUE.equals(order.getIsUsed())) {
-            return "订单已核销，无法退款";
-        }
         if (OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue().equals(orderDetail.getOrderStatus()) ||
                 OrderDetail.OrderDetailStatusEnum.REFUND.getValue().equals(orderDetail.getOrderStatus())) {
             return "已操作退款，请勿重复操作";

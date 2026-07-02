@@ -89,8 +89,9 @@ public class VisitorController {
     /**
      * 通过 Excel 批量导入游客。
      * <p>
-     * Excel 必须包含且仅包含"姓名、手机号、身份证号"三列（顺序不限）。
-     * 每行数据均会校验手机号和身份证格式，并自动补全省市和性别。
+     * Excel 必须包含且仅包含“姓名、手机号、身份证号”三列（顺序不限）。
+     * 所有数据行逐行校验，收集全部错误后统一返回前端（不中断）；校验全部通过才批量入库。
+     * 校验失败时将每一行的错误原因（含行号）直接返回给前端，不抛全局异常。
      * 导入成功后返回实际入库的行数。
      * </p>
      * 注意：该接口跳过 Sa-Token 鉴权（@SaIgnore），供小程序端直接调用。
@@ -106,9 +107,14 @@ public class VisitorController {
         if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
-        // 返回实际导入成功的行数（表头不计入）
-        int count = visitorService.importExcel(file, teamId, batchNo);
-        return HttpResult.ok(count);
+        try {
+            // 返回实际导入成功的行数（表头不计入）
+            int count = visitorService.importExcel(file, teamId, batchNo);
+            return HttpResult.ok(count);
+        } catch (MyException e) {
+            // 校验失败（表头不合法、行数据不合法等），将所有错误原囤直接返回给前端
+            return HttpResult.error(e.getCode(), e.getMessage());
+        }
     }
 
     /**

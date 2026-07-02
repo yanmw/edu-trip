@@ -121,9 +121,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
     /**
      * 通过 Excel 批量导入游客。
      * <p>
-     * 校验规则与 saveVisitor 保持一致（手机号、身份证格式），
-     * 但不校验 wechatOpenid 唯一性（Excel 导入场景不涉及微信绑定）。
-     * 所有行校验通过后才执行批量插入，任意行校验失败均会中断整个导入。
+     * 采用两阶段处理：
+     * <ol>
+     *   <li>第一阶段：遍历所有数据行，逐行校验手机号和身份证格式，收集所有错误，不中断。</li>
+     *   <li>第二阶段：若第一阶段存在错误，汇总后返回前端，不执行入库；全部通过才批量插入。</li>
+     * </ol>
+     * 这样前端可以一次性看到所有问题行，而不是每次只看到第一个错误。
      * </p>
      *
      * @return 实际导入的行数
@@ -135,22 +138,45 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
 
         try (ExcelReader reader = ExcelUtil.getReader(file.getInputStream())) {
-            // 校验表头：必须且只能包含姓名、手机号、身份证号
+            // 第一步：校验表头，必须且只能包含姓名、手机号、身份证号
             validateImportHeaders(reader.readRow(0));
             addHeaderAlias(reader);
             List<Visitor> visitorList = reader.readAll(Visitor.class);
             if (visitorList == null || visitorList.isEmpty()) {
                 return 0;
             }
+
+            // 第二步：逐行校验，收集所有错误（不立即中断，让前端一次看到所有问题）
+            List<String> errors = new ArrayList<>();
+            for (int i = 0; i < visitorList.size(); i++) {
+                Visitor visitor = visitorList.get(i);
+                // Excel 第1行为表头，数据从第2行开始，行号 = 索引 + 2
+                int rowNum = i + 2;
+                try {
+                    validateMobile(visitor.getMobile());
+                } catch (MyException e) {
+                    errors.add("第" + rowNum + "行：" + e.getMessage());
+                }
+                try {
+                    validateIdCardFormat(visitor.getIdCard());
+                } catch (MyException e) {
+                    errors.add("第" + rowNum + "行：" + e.getMessage());
+                }
+            }
+
+            // 第三步：有校验错误时，汇总后统一抛出，不执行入库
+            if (!errors.isEmpty()) {
+                throw new MyException(HttpStatus.SC_BAD_REQUEST, String.join("\n", errors));
+            }
+
+            // 第四步：全部校验通过，补全字段后批量入库
             for (Visitor visitor : visitorList) {
                 // 清除 Excel 中可能携带的 id，确保以新增方式入库
                 visitor.setId(null);
                 visitor.setTeamId(teamId);
                 visitor.setBatchNo(batchNo);
                 visitor.setIsDeleted(SysConstants.IS_FALSE);
-                validateMobile(visitor.getMobile());
-                validateIdCardFormat(visitor.getIdCard());
-                // Excel 导入沿用同一套游客信息补齐规则
+                // 沿用同一套省市和性别补齐规则
                 fillProvinceCityAndGender(visitor);
             }
             super.saveBatch(visitorList);

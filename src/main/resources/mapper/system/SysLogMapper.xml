@@ -2,4 +2,20 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.cui.edu.system.mapper.SysLogMapper">
 
+    <select id="listUserNames" resultType="java.lang.String">
+        SELECT user_name
+        FROM sys_log
+        WHERE user_name IS NOT NULL AND user_name != ''
+        GROUP BY user_name
+        ORDER BY user_name
+    </select>
+
+    <select id="listOperations" resultType="java.lang.String">
+        SELECT operation
+        FROM sys_log
+        WHERE operation IS NOT NULL AND operation != ''
+        GROUP BY operation
+        ORDER BY operation
+    </select>
+
 </mapper>

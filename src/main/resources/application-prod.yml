@@ -4,14 +4,14 @@ spring:
       datasource:
         master: # 主数据库
           url: jdbc:mysql://localhost:3306/edu_trip?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-          username: systek_localhost
-          password: systek_admin
+          username: root
+          password: c484bb0c911cfa33
           driver-class-name: com.mysql.cj.jdbc.Driver
   redis:
     port: 6379 # 端口
-    database: 5 # redis第5个库
-    host: r-8vb5ulhul3i2w42220.redis.zhangbei.rds.aliyuncs.com # 地址
-    password: Systek@!redis # 密码
+    database: 4 # redis第4个库
+    host: 127.0.0.1 # 地址
+#    password: Systek@!redis # 密码
 
 # swagger开关
 swagger:
@@ -26,6 +26,6 @@ code:
 edu:
   file:
     upload-path: /www/file # 线上linux环境文件存储目录
-    domain: https://www.systekcn.com # 线上访问域名
+    domain: https://cjcbygc.systekcn.com/yanxue_api # 线上访问域名
 unionPay:
-  notifyUrl: https://www.systekcn.com/trip/order/unionPayNotify # 银联回调
+  notifyUrl: https://cjcbygc.systekcn.com/yanxue_api/trip/order/unionPayNotify # 银联回调

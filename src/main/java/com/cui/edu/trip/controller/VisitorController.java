@@ -9,6 +9,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.service.VisitorService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.VisitorVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -20,7 +21,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,6 +51,7 @@ public class VisitorController {
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改游客")
     @SaIgnore
+    @Log(title = "新增/修改游客")
     public HttpResult save(@RequestBody Visitor record) {
         if (BeanUtil.isNotEmpty(record)) {
             visitorService.saveVisitor(record);
@@ -63,6 +64,7 @@ public class VisitorController {
     @PostMapping(value = "/importExcel", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ApiOperation(value = "Excel导入游客")
     @SaIgnore
+    @Log(title = "Excel导入游客")
     public HttpResult importExcel(@ApiParam(value = "Excel文件", required = true) @RequestParam("file") MultipartFile file,
                                   @ApiParam(value = "团队ID", required = true) @RequestParam("teamId") Long teamId,
                                   @ApiParam(value = "游客批次号") @RequestParam(value = "batchNo", required = false) String batchNo) {
@@ -87,6 +89,7 @@ public class VisitorController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除游客")
+    @Log(title = "删除游客")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             visitorService.logicDelete(records);

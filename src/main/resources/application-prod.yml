@@ -26,6 +26,6 @@ code:
 edu:
   file:
     upload-path: /www/file # 线上linux环境文件存储目录
-    domain: https://cjcbygc.systekcn.com/yanxue_api # 线上访问域名
+    domain: https://cjcbygc.systekcn.com/yanxue_api # 线上资源访问域名
 unionPay:
   notifyUrl: https://cjcbygc.systekcn.com/yanxue_api/trip/order/unionPayNotify # 银联回调

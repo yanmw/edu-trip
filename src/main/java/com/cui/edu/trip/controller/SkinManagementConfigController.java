@@ -10,6 +10,7 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.SkinManagementConfig;
 import com.cui.edu.trip.service.SkinManagementConfigService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.SkinManagementConfigVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -18,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,6 +43,7 @@ public class SkinManagementConfigController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改皮肤配置")
+    @Log(title = "新增/修改皮肤配置")
     public HttpResult save(@RequestBody SkinManagementConfig record) {
         if (BeanUtil.isNotEmpty(record)) {
             if (record.getId() == null) {
@@ -62,6 +63,7 @@ public class SkinManagementConfigController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除皮肤配置")
+    @Log(title = "删除皮肤配置")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             skinManagementConfigService.logicDelete(records);

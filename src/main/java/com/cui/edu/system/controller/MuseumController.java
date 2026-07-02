@@ -12,6 +12,7 @@ import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.service.MuseumSaveResult;
 import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.system.MuseumVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -38,6 +39,7 @@ public class MuseumController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改博物馆")
+    @Log(title = "新增/修改博物馆")
     public HttpResult save(@RequestBody Museum record) {
         if (BeanUtil.isNotEmpty(record)) {
             // 新增博物馆必须配置银联商户号，后续下单支付会按博物馆读取mid。
@@ -60,6 +62,7 @@ public class MuseumController {
 
     @PostMapping(value = "/disableFeature")
     @ApiOperation(value = "禁用博物馆")
+    @Log(title = "禁用博物馆")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             museumService.logicDelete(records);

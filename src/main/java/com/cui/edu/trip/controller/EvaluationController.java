@@ -10,6 +10,7 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.service.EvaluationService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.EvaluationVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -18,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,6 +59,7 @@ public class EvaluationController {
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除评价")
     @SaIgnore
+    @Log(title = "删除评价")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             evaluationService.logicDelete(records);

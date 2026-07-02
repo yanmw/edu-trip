@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.cui</groupId>
     <artifactId>edu-trip</artifactId>
-    <version>1.0</version>
+    <version>1.1</version>
     <name>edu-trip</name>
     <description>edu-trip</description>
     <properties>

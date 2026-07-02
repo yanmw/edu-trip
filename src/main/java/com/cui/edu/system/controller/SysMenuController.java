@@ -10,6 +10,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.system.entity.SysMenu;
 import com.cui.edu.system.service.SysMenuService;
 import com.cui.edu.system.service.SysRoleMenuService;
+import com.cui.edu.util.Log;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -38,6 +39,7 @@ public class SysMenuController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/更新菜单")
+    @Log(title = "新增/更新菜单")
     public HttpResult save(@RequestBody SysMenu record) {
         if (BeanUtil.isNotEmpty(record)) {
             menuService.saveOrUpdate(record);
@@ -49,6 +51,7 @@ public class SysMenuController {
 
     @ApiOperation(value = "菜单删除")
     @PostMapping(value = "/delete")
+    @Log(title = "删除菜单")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             // 判断删除的菜单下是否有子菜单

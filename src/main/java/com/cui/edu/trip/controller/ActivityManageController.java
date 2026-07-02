@@ -9,6 +9,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.service.ActivityManageService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.ActivityManageStatusVO;
 import com.cui.edu.vo.trip.ActivityManageVO;
 import io.swagger.annotations.Api;
@@ -18,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,6 +44,7 @@ public class ActivityManageController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动")
+    @Log(title = "新增/修改活动")
     public HttpResult save(@RequestBody ActivityManage record) {
         if (BeanUtil.isNotEmpty(record)) {
             String errorMsg = activityManageService.saveActivityManage(record);
@@ -58,6 +59,7 @@ public class ActivityManageController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动")
+    @Log(title = "删除活动")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             activityManageService.logicDelete(records);
@@ -69,6 +71,7 @@ public class ActivityManageController {
 
     @PostMapping(value = "/updateStatus")
     @ApiOperation(value = "禁用/启用活动")
+    @Log(title = "禁用/启用活动")
     public HttpResult updateStatus(@ApiParam(value = "活动状态参数") @RequestBody ActivityManageStatusVO vo) {
         if (ObjectUtil.isNotEmpty(vo)
                 && ObjectUtil.isNotEmpty(vo.getId())

@@ -9,12 +9,12 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.ActivityFile;
 import com.cui.edu.trip.service.ActivityFileService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.ActivityFileVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,6 +39,7 @@ public class ActivityFileController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动文件")
+    @Log(title = "新增/修改活动文件")
     public HttpResult save(@RequestBody ActivityFile record) {
         if (BeanUtil.isNotEmpty(record)) {
             if (record.getId() == null && record.getIsDeleted() == null) {
@@ -53,6 +54,7 @@ public class ActivityFileController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动文件")
+    @Log(title = "删除活动文件")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             activityFileService.logicDelete(records);

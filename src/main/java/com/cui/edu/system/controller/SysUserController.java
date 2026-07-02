@@ -89,6 +89,7 @@ public class SysUserController {
      */
     @PostMapping(value = "/addUser")
     @ApiOperation("添加/更新用户")
+    @Log(title = "添加/更新用户")
     public HttpResult saveUser(@RequestBody SysUser user) {
         if (BeanUtil.isEmpty(user)) {
             return HttpResult.errorBadRequest();
@@ -108,6 +109,7 @@ public class SysUserController {
      */
     @GetMapping(value = "/updateUserStatus")
     @ApiOperation("禁用启用用户")
+    @Log(title = "禁用/启用用户")
     public HttpResult updateUserStatus(@RequestParam Long id, @RequestParam Integer status) {
         sysUserService.updateUserStatus(id, status);
         return HttpResult.ok();

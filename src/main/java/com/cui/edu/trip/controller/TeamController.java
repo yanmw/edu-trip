@@ -9,6 +9,7 @@ import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.trip.entity.Team;
 import com.cui.edu.trip.service.TeamService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.TeamVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -17,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,6 +43,7 @@ public class TeamController {
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改团队")
     @SaIgnore
+    @Log(title = "新增/修改团队")
     public HttpResult save(@RequestBody Team record) {
         if (BeanUtil.isNotEmpty(record)) {
             boolean saved = teamService.saveTeam(record);
@@ -59,6 +60,7 @@ public class TeamController {
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除团队")
     @SaIgnore
+    @Log(title = "删除团队")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             teamService.logicDelete(records);

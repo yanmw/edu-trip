@@ -10,6 +10,7 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.ActivityType;
 import com.cui.edu.trip.service.ActivityTypeService;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.ActivityTypeVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -36,6 +37,7 @@ public class ActivityTypeController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动类型")
+    @Log(title = "新增/修改活动类型")
     public HttpResult save(@RequestBody ActivityType record) {
         if (BeanUtil.isNotEmpty(record)) {
             if (record.getId() == null) {
@@ -55,6 +57,7 @@ public class ActivityTypeController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动类型")
+    @Log(title = "删除活动类型")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             activityTypeService.logicDelete(records);

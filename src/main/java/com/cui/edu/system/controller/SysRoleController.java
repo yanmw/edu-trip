@@ -13,6 +13,7 @@ import com.cui.edu.system.service.SysRoleMenuService;
 import com.cui.edu.system.service.SysRoleService;
 import com.cui.edu.system.service.SysUserRoleService;
 import com.cui.edu.common.HttpStatus;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.system.RoleVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -47,6 +48,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "保存角色")
+    @Log(title = "新增/更新角色")
     public HttpResult save(@RequestBody SysRole record) {
         if (BeanUtil.isNotEmpty(record)) {
 //            判断该角色是否已存在
@@ -65,6 +67,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除角色")
+    @Log(title = "删除角色")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
 //            判断删除的角色里是否被使用
@@ -81,6 +84,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/deleteUserRole")
     @ApiOperation(value = "清理角色下的人员及角色菜单")
+    @Log(title = "清理角色下的人员及菜单")
     public HttpResult deleteUserRole(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             userRoleService.deleteByRoleId(records);
@@ -122,6 +126,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "保存角色-菜单")
     @PostMapping(value = "/saveRoleMenus")
+    @Log(title = "保存角色菜单权限")
     public HttpResult saveRoleMenus(@RequestBody List<SysRoleMenu> records) {
         if (ObjectUtil.isNotEmpty(records)) {
             roleService.saveRoleMenus(records);
@@ -133,6 +138,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "更新用户-角色")
     @GetMapping(value = "/updateUserRole")
+    @Log(title = "更新用户角色")
     public HttpResult updateUserRole(@RequestParam Long userId, @RequestParam Long roleId) {
         if (ObjectUtil.isNotEmpty(userId) && ObjectUtil.isNotEmpty(roleId)) {
             userRoleService.updateUserRole(userId, roleId);

@@ -5,6 +5,7 @@ import cn.dev33.satoken.annotation.SaIgnore;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.system.entity.SysFile;
 import com.cui.edu.system.service.SysFileService;
+import com.cui.edu.util.Log;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -53,6 +53,7 @@ public class SysFileController {
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ApiOperation("上传文件")
+    @Log(title = "上传文件")
     public HttpResult upload(@ApiParam(value = "文件", required = true) @RequestParam("file") MultipartFile file) {
         String requestPath = sysFileService.upload(file);
         return HttpResult.ok(requestPath);

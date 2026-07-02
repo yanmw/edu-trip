@@ -14,6 +14,7 @@ import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.service.OrderService;
 import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.util.AvoidRepeatRequest;
+import com.cui.edu.util.Log;
 import com.cui.edu.vo.trip.AppointmentVO;
 import com.cui.edu.vo.trip.OrderPayQueryVO;
 import com.cui.edu.vo.trip.OrderVO;
@@ -51,6 +52,7 @@ public class OrderController {
     @PostMapping(value = "/add")
     @ApiOperation(value = "添加订单")
     @SaIgnore
+    @Log(title = "新增订单")
     public HttpResult add(@RequestBody AppointmentVO vo, HttpServletRequest request) throws Exception {
         if (BeanUtil.isNotEmpty(vo)) {
             Map map = orderService.add(vo, request);
@@ -84,6 +86,7 @@ public class OrderController {
     @GetMapping(value = "/refund")
     @ApiOperation(value = "管理员退款")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
+    @Log(title = "管理员退款")
     public HttpResult refund(@ApiParam(value = "子订单号") @RequestParam Long orderDetailId,
                              @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
         Map result = orderService.refund(orderDetailId, refundReason);
@@ -97,6 +100,7 @@ public class OrderController {
     @GetMapping(value = "/refundAll")
     @ApiOperation(value = "管理员退全款")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
+    @Log(title = "管理员退全款")
     public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderNo,
                                 @ApiParam(value = "退款原因") @RequestParam String refundReason) throws Exception {
         if (ObjectUtil.isEmpty(orderNo)) {
@@ -127,6 +131,7 @@ public class OrderController {
     @GetMapping(value = "/abandon")
     @ApiOperation(value = "放弃支付")
     @SaIgnore
+    @Log(title = "放弃支付")
     public HttpResult abandon(@ApiParam(value = "订单号") @RequestParam String orderNo) throws Exception {
         if (ObjectUtil.isEmpty(orderNo)) {
             return HttpResult.errorBadRequest();
@@ -140,6 +145,7 @@ public class OrderController {
 
     @PostMapping(value = "/verification")
     @ApiOperation(value = "核销", response = JSONObject.class)
+    @Log(title = "订单核销")
     public HttpResult verification(@RequestBody VerificationVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             Map map = orderService.verification(vo);

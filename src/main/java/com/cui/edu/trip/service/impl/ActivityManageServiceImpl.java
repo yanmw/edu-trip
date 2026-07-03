@@ -240,28 +240,36 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
 
     private QueryWrapper<ActivityManage> buildQueryWrapper(ActivityManageVO vo) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
+        // 1. 若传入活动名称，则进行模糊查询 (like)
         if (StringUtils.isNotBlank(vo.getActivityName())) {
             ew.like(ActivityManage.ACTIVITY_NAME, vo.getActivityName());
         }
+        // 2. 精确过滤：活动类型
         if (vo.getActivityTypeId() != null) {
             ew.eq(ActivityManage.ACTIVITY_TYPE_ID, vo.getActivityTypeId());
         }
+        // 3. 精确过滤：是否热门
         if (vo.getIsHot() != null) {
             ew.eq(ActivityManage.IS_HOT, vo.getIsHot());
         }
+        // 4. 精确过滤：所属博物馆
         if (vo.getMuseumId() != null) {
             ew.eq(ActivityManage.MUSEUM_ID, vo.getMuseumId());
         }
+        // 5. 精确过滤：启用/发布状态
         if (vo.getStatus() != null) {
             ew.eq(ActivityManage.STATUS, vo.getStatus());
         }
+        // 6. 精确过滤：参与类型 (个人/团队)
         if (vo.getParticipationType() != null) {
             ew.eq(ActivityManage.PARTICIPATION_TYPE, vo.getParticipationType());
         }
-        // 按标签ID过滤：tag_ids 字段存储逗号分隔的标签ID，使用 FIND_IN_SET 精确匹配单个标签ID
+        // 7. 特殊匹配：按标签ID过滤
+        // 因数据库中 tag_ids 以逗号分割的字符串存储（如 '1,2,3'），故使用 MySQL 的 FIND_IN_SET 函数匹配包含特定标签ID的记录
         if (vo.getTagId() != null) {
             ew.apply("FIND_IN_SET({0}, tag_ids) > 0", vo.getTagId());
         }
+        // 8. 过滤逻辑删除记录，并按 ID 降序排列
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         return ew;
@@ -278,10 +286,11 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
      * @param appointmentDate    预约日期
      */
     private void fillBookedCount(List<ActivityManage> activityManageList, Long museumId, LocalDate appointmentDate) {
+        // 1. 过滤空边界情况
         if (ObjectUtil.isEmpty(activityManageList)) {
             return;
         }
-        // 1. 收集所有场次，构建 scheduleId -> ActivitySchedule 的映射
+        // 2. 收集所有活动对应的具体场次排期，构建 map 映射
         Map<Long, ActivitySchedule> scheduleMap = new HashMap<>();
         for (ActivityManage activity : activityManageList) {
             List<ActivitySchedule> schedules = activity.getActivityScheduleList();
@@ -294,19 +303,19 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (scheduleMap.isEmpty()) {
             return;
         }
-        // 2. 统计口径：订单详情 order_status = 10（支付成功）
+        // 3. 定义已占位统计口径：子订单支付成功 (10) 状态才算成功预订
         List<Integer> detailStatuses = Collections.singletonList(10);
-        // 主订单状态不做额外限制（以订单详情状态为准），传空列表跳过主订单状态过滤
+        // 主订单状态不做额外限制（以订单详情状态为准），传空列表跳过主订单过滤
         List<Integer> orderStatuses = Collections.emptyList();
 
-        // 3. 逐场次调用已有的 countBookedQuantity 方法统计已预约人数，并回填
-        //    场次数量通常较小（每个活动 1~5 个场次），整体调用次数可控。
+        // 4. 遍历活动及其对应的场次列表，回填已订满票数
         for (ActivityManage activity : activityManageList) {
             List<ActivitySchedule> schedules = activity.getActivityScheduleList();
             if (ObjectUtil.isEmpty(schedules)) {
                 continue;
             }
             for (ActivitySchedule schedule : schedules) {
+                // 调用 Mapper 中的联表 count 查询，统计该场次已售出门票数 (bookedCount)
                 int booked = orderDetailMapper.countBookedQuantity(
                         museumId,
                         activity.getId(),
@@ -320,42 +329,70 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         }
     }
 
+    /**
+     * 保存并同步更新活动关联的场次排期（差分更新设计）
+     * <p>
+     * 业务设计：
+     * 1. 场次排期包含新增、修改和删除。
+     * 2. 删除场次不执行物理删除，而是将其状态 status 修改为 0 (禁用)。
+     *    这是为了避免影响已经预订了该历史场次的订单（保证历史订单外键的完整性）。
+     *
+     * @param record 当前保存的活动实体
+     */
     private void saveActivitySchedules(ActivityManage record) {
+        // 1. 获取本次提交的场次列表
         List<ActivitySchedule> activityScheduleList = record.getActivityScheduleList();
         if (activityScheduleList == null) {
             return;
         }
+        // 2. 查询该活动在数据库中目前已有的所有旧场次列表
         List<ActivitySchedule> oldScheduleList = listSchedulesByActivityId(record.getId());
+        
+        // 3. 收集本次提交中带有 ID 的场次，这些是用户保留或编辑的已有旧场次 ID 集合
         Set<Long> submitScheduleIds = activityScheduleList.stream()
                 .map(ActivitySchedule::getId)
                 .filter(ObjectUtil::isNotEmpty)
                 .collect(Collectors.toSet());
+                
+        // 定义新增列表、修改列表和禁用列表
         List<ActivitySchedule> insertList = new ArrayList<>();
         List<ActivitySchedule> updateList = new ArrayList<>();
         List<ActivitySchedule> disableList = new ArrayList<>();
+        
+        // 4. 遍历本次提交的场次，区分“新增”和“修改”
         for (ActivitySchedule activitySchedule : activityScheduleList) {
+            // 绑定外键关联关系
             activitySchedule.setActivityId(record.getId());
             if (activitySchedule.getId() == null) {
+                // 4.1 无 ID，说明是用户新添加的场次，默认状态设为启用 (1)
                 if (activitySchedule.getStatus() == null) {
                     activitySchedule.setStatus(SysConstants.IS_TRUE);
                 }
                 insertList.add(activitySchedule);
             } else {
+                // 4.2 有 ID，说明是需要修改参数的旧场次
                 updateList.add(activitySchedule);
             }
         }
+        
+        // 5. 遍历数据库旧场次，找出本次提交已不存在的场次，归类为“删除”
         for (ActivitySchedule oldSchedule : oldScheduleList) {
             if (!submitScheduleIds.contains(oldSchedule.getId())) {
+                // 5.1 旧场次在提交的数据里不存在，将其状态设为禁用 (0)
                 oldSchedule.setStatus(SysConstants.IS_FALSE);
                 disableList.add(oldSchedule);
             }
         }
+        
+        // 6. 分批执行数据库写入：新增执行批量 insert
         if (!insertList.isEmpty()) {
             activityScheduleService.saveBatch(insertList);
         }
+        // 7. 修改的场次执行批量 update
         if (!updateList.isEmpty()) {
             activityScheduleService.updateBatchById(updateList);
         }
+        // 8. 废弃的场次执行批量 update 禁用状态
         if (!disableList.isEmpty()) {
             activityScheduleService.updateBatchById(disableList);
         }

@@ -401,22 +401,31 @@ public class UnionPayServiceImpl implements UnionPayService {
      * 4. 将 AppId、Timestamp、Nonce、Signature 放入 Authorization。</p>
      */
     private String buildOpenBodySigAuthorization(String body) throws Exception {
+        // 1. 校验银联接口 appId 及 appKey 的配置完整性
         if (appletAppId == null || appletAppId.trim().isEmpty()
                 || appletAppKey == null || appletAppKey.trim().isEmpty()) {
             throw new RuntimeException("银联OPEN-BODY-SIG认证参数缺失，请检查unionPay.appletAppId和unionPay.appletAppKey配置");
         }
 
+        // 2. 生成当前时间戳和随机串（UUID去除连字符），用于签名加盐防重放攻击
         String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
         String nonce = UUID.randomUUID().toString().replace("-", "");
         String requestBody = body == null ? "" : body;
 
-        // bodyDigest 必须和实际发送的 JSON 字符串完全一致，否则银联侧会验签失败。
+        // 3. 对原始请求体 JSON 字符串计算 SHA256 摘要（十六进制表现形式），用于内容防篡改校验
+        // 注：该摘要必须与最终通过 HTTP 发送的 entity 完全相同
         String bodyDigest = DigestUtils.sha256Hex(requestBody.getBytes(StandardCharsets.UTF_8));
+        
+        // 4. 将 appId、时间戳、随机数与请求体摘要无缝拼接，形成最终的待签名字符串
         String waitSign = appletAppId + timestamp + nonce + bodyDigest;
+        
+        // 5. 使用商户授权密钥 appletAppKey 对待签名串执行 HmacSHA256 加密，并转为 Base64 编码
         String signature = hmacSha256Base64(waitSign, appletAppKey);
 
         log.info("银联OPEN-BODY-SIG认证参数：appId={}，timestamp={}，nonce={}，bodyDigest={}",
                 appletAppId, timestamp, nonce, bodyDigest);
+                
+        // 6. 按照银联开放平台格式，拼接 Authorization 回调报头数据
         return "OPEN-BODY-SIG AppId=\"" + appletAppId
                 + "\", Timestamp=\"" + timestamp
                 + "\", Nonce=\"" + nonce
@@ -455,16 +464,19 @@ public class UnionPayServiceImpl implements UnionPayService {
     }
 
     private String buildNotifyWaitSign(Map<String, String[]> parameterMap) {
+        // 1. 使用 TreeMap (基于 Key 的自然升序，即 ASCII 码字典序排列) 来存储过滤后的非空字段
         TreeMap<String, String> sortedParams = new TreeMap<>();
         for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
             String key = entry.getKey();
             String value = getFirstNonEmptyValue(entry.getValue());
+            // 2. 过滤规则：参数名为空、参数名为 sign本身（签名不参与签名计算）、或参数值为空时，跳过该字段
             if (key == null || "sign".equals(key) || value == null || value.trim().isEmpty()) {
                 continue;
             }
             sortedParams.put(key, value);
         }
 
+        // 3. 将排好序的参数对利用 StringJoiner，以 & 连字符进行拼装，格式如 key1=val1&key2=val2
         StringJoiner joiner = new StringJoiner("&");
         for (Map.Entry<String, String> entry : sortedParams.entrySet()) {
             joiner.add(entry.getKey() + "=" + entry.getValue());

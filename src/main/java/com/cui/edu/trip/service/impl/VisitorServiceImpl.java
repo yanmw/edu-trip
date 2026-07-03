@@ -512,21 +512,31 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
      * </p>
      */
     private void fillProvinceAndCityByIdCard(Visitor record, String idCard) {
+        // 1. 身份证前 6 位是行政区划地址码，不足 6 位无法解析
         if (idCard.length() < 6) {
             return;
         }
+        // 2. 截取前 6 位原始区划码
         String addressCode = idCard.substring(0, 6);
+        // 3. 取前 2 位（省份标识）并补全 `0000` 获得省级行政区划码
         String provinceCode = addressCode.substring(0, 2) + "0000";
+        // 4. 取前 4 位（地市标识）并补全 `00` 获得市级行政区划码
         String cityCode = addressCode.substring(0, 4) + "00";
+        
+        // 5. 从区划表中查询对应的省级和地市级中文行政区划名
         AdministrativeDivision province = getAdministrativeDivision(provinceCode);
         AdministrativeDivision city = getAdministrativeDivision(cityCode);
+        
+        // 6. 回填省份名称
         if (province != null && StringUtils.isNotBlank(province.getName())) {
             record.setProvince(province.getName());
         }
+        // 7. 回填地市名称：
         if (city != null && StringUtils.isNotBlank(city.getName())) {
             record.setCity(city.getName());
         } else if (province != null && isMunicipality(province.getName())) {
-            // 直辖市无独立城市行政区，城市取省份名
+            // 7.1 特殊逻辑：若是直辖市（北京、天津、上海、重庆），其地址码第三四位无法直接查出地级市，
+            // 此时地市名称直接取省级行政区划名称（如：北京市 - 北京市）
             record.setCity(province.getName());
         }
     }

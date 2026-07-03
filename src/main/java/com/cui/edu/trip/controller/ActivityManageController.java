@@ -16,6 +16,7 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -161,10 +163,12 @@ public class ActivityManageController {
      * 根据博物馆 ID 查询可预约的活动列表
      * <p>
      * 支持多重可选过滤条件，如：参与形式 (个人/团队)、活动分类 ID 等。主要用于小程序首页活动列表渲染。
+     * 若传入 appointmentDate，则每个场次会返回该日期已预约人数（bookedCount）。
      *
-     * @param museumId           博物馆 ID
-     * @param participationType  可选：参与形式，1：团队，2：个人
-     * @param activityTypeId     可选：活动类型主键 ID
+     * @param museumId          博物馆 ID
+     * @param participationType 可选：参与形式，1：团队，2：个人
+     * @param activityTypeId    可选：活动类型主键 ID
+     * @param appointmentDate   可选：预约日期，格式 yyyy-MM-dd
      * @return 匹配的活动列表数据
      */
     @GetMapping(value = "/findByMuseumId")
@@ -174,11 +178,14 @@ public class ActivityManageController {
                                      @ApiParam(value = "活动分类，1：团队；2：个人")
                                      @RequestParam(required = false) Integer participationType,
                                      @ApiParam(value = "活动类型ID")
-                                     @RequestParam(required = false) Long activityTypeId) {
+                                     @RequestParam(required = false) Long activityTypeId,
+                                     @ApiParam(value = "预约日期，格式 yyyy-MM-dd，传入后场次返回已预约人数bookedCount")
+                                     @RequestParam(required = false)
+                                     @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate appointmentDate) {
         // 1. 校验博物馆 ID 非空
         if (ObjectUtil.isNotEmpty(museumId)) {
             // 2. 查询对应的活动列表
-            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType, activityTypeId);
+            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType, activityTypeId, appointmentDate);
             return HttpResult.ok(activityManageList);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");

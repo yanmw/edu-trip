@@ -123,6 +123,9 @@ public class ActivityManage implements Serializable {
 
     public static final Integer AGE_GROUP_CHILD = 2;
 
+    @ApiModelProperty(value = "活动标签ID集合，多个以英文逗号分隔，如 '1,2,3'")
+    private String tagIds;
+
     // 活动场次为一对多子数据，不映射到活动主表字段。
     @TableField(exist = false)
     @ApiModelProperty(value = "活动场次")
@@ -172,4 +175,6 @@ public class ActivityManage implements Serializable {
     public static final String PARTICIPATION_TYPE = "participation_type";
 
     public static final String AGE_GROUP = "age_group";
+
+    public static final String TAG_IDS = "tag_ids";
 }

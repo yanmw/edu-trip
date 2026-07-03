@@ -77,6 +77,10 @@ public class ActivitySchedule implements Serializable {
     @TableField(fill = FieldFill.UPDATE)
     private Long updateBy;
 
+    @ApiModelProperty(value = "指定预约日期该场次已预约人数（非数据库字段，动态计算回填）")
+    @TableField(exist = false)
+    private Integer bookedCount;
+
 
     public static final String ID = "id";
 

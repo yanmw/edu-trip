@@ -7,6 +7,7 @@ import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.entity.ActivitySchedule;
 import com.cui.edu.trip.mapper.ActivityManageMapper;
+import com.cui.edu.trip.mapper.OrderDetailMapper;
 import com.cui.edu.trip.service.ActivityManageService;
 import com.cui.edu.trip.service.ActivityScheduleService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -20,7 +21,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +48,9 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
 
     @Autowired
     private MuseumService museumService;
+
+    @Autowired
+    private OrderDetailMapper orderDetailMapper;
 
     /**
      * 保存或更新活动信息
@@ -194,15 +201,19 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
     }
 
     /**
-     * 查询指定博物馆名下可供预约的所有已上架活动列表（用于小程序等前端端展示）
+     * 查询指定博物馆名下可供预约的所有已上架活动列表（用于小程序等前端展示）
+     * <p>
+     * 若传入 appointmentDate，则对每个活动的每个场次回填该日期已预约人数（bookedCount）。
+     * 已预约人数 = 订单详情表中状态为"支付成功(10)"且关联主订单预约日期匹配的记录数。
      *
-     * @param museumId           博物馆 ID
-     * @param participationType  可选：参与形式 (个人/团队)
-     * @param activityTypeId     可选：活动类型 ID
+     * @param museumId          博物馆 ID
+     * @param participationType 可选：参与形式 (个人/团队)
+     * @param activityTypeId    可选：活动类型 ID
+     * @param appointmentDate   可选：预约日期，格式 yyyy-MM-dd；传入后场次返回 bookedCount 字段
      * @return 匹配的有效活动列表，且带排期场次详情
      */
     @Override
-    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId) {
+    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId, LocalDate appointmentDate) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
         ew.eq(ActivityManage.MUSEUM_ID, museumId);
         if (participationType != null) {
@@ -211,15 +222,21 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (activityTypeId != null) {
             ew.eq(ActivityManage.ACTIVITY_TYPE_ID, activityTypeId);
         }
-        // 仅查询处于“已启用上架 (1)”且“未逻辑删除 (0)”状态的活动
+        // 仅查询处于"已启用上架 (1)"且"未逻辑删除 (0)"状态的活动
         ew.eq(ActivityManage.STATUS, SysConstants.IS_TRUE);
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         List<ActivityManage> activityManageList = super.list(ew);
-        // 补齐每一个活动的排期场次数据
+        // 补齐每个活动的排期场次数据
         fillActivitySchedules(activityManageList);
+        // 若传入预约日期，则回填每个场次的已预约人数
+        if (appointmentDate != null) {
+            fillBookedCount(activityManageList, museumId, appointmentDate);
+        }
         return activityManageList;
     }
+
+    // ==================== 私有辅助方法 ====================
 
     private QueryWrapper<ActivityManage> buildQueryWrapper(ActivityManageVO vo) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
@@ -241,9 +258,66 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (vo.getParticipationType() != null) {
             ew.eq(ActivityManage.PARTICIPATION_TYPE, vo.getParticipationType());
         }
+        // 按标签ID过滤：tag_ids 字段存储逗号分隔的标签ID，使用 FIND_IN_SET 精确匹配单个标签ID
+        if (vo.getTagId() != null) {
+            ew.apply("FIND_IN_SET({0}, tag_ids) > 0", vo.getTagId());
+        }
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         return ew;
+    }
+
+    /**
+     * 批量回填所有活动场次在指定预约日期的已预约人数（bookedCount）。
+     * <p>
+     * 统计口径：订单详情表 order_status = 10（支付成功），联表主订单 appointment_date = 指定日期。
+     * 采用"先收集所有场次ID，批量查询，再按场次ID分组聚合"的方式，避免 N+1 查询。
+     *
+     * @param activityManageList 活动列表（场次列表已填充）
+     * @param museumId           博物馆 ID（与订单详情表联合过滤，防跨馆干扰）
+     * @param appointmentDate    预约日期
+     */
+    private void fillBookedCount(List<ActivityManage> activityManageList, Long museumId, LocalDate appointmentDate) {
+        if (ObjectUtil.isEmpty(activityManageList)) {
+            return;
+        }
+        // 1. 收集所有场次，构建 scheduleId -> ActivitySchedule 的映射
+        Map<Long, ActivitySchedule> scheduleMap = new HashMap<>();
+        for (ActivityManage activity : activityManageList) {
+            List<ActivitySchedule> schedules = activity.getActivityScheduleList();
+            if (ObjectUtil.isNotEmpty(schedules)) {
+                for (ActivitySchedule schedule : schedules) {
+                    scheduleMap.put(schedule.getId(), schedule);
+                }
+            }
+        }
+        if (scheduleMap.isEmpty()) {
+            return;
+        }
+        // 2. 统计口径：订单详情 order_status = 10（支付成功）
+        List<Integer> detailStatuses = Collections.singletonList(10);
+        // 主订单状态不做额外限制（以订单详情状态为准），传空列表跳过主订单状态过滤
+        List<Integer> orderStatuses = Collections.emptyList();
+
+        // 3. 逐场次调用已有的 countBookedQuantity 方法统计已预约人数，并回填
+        //    场次数量通常较小（每个活动 1~5 个场次），整体调用次数可控。
+        for (ActivityManage activity : activityManageList) {
+            List<ActivitySchedule> schedules = activity.getActivityScheduleList();
+            if (ObjectUtil.isEmpty(schedules)) {
+                continue;
+            }
+            for (ActivitySchedule schedule : schedules) {
+                int booked = orderDetailMapper.countBookedQuantity(
+                        museumId,
+                        activity.getId(),
+                        schedule.getId(),
+                        appointmentDate,
+                        orderStatuses,
+                        detailStatuses
+                );
+                schedule.setBookedCount(booked);
+            }
+        }
     }
 
     private void saveActivitySchedules(ActivityManage record) {

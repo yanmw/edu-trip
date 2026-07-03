@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.vo.trip.ActivityManageVO;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -43,7 +44,8 @@ public interface ActivityManageService extends IService<ActivityManage> {
     ActivityManage findById(Long id);
 
     /**
-     * 根据博物馆ID、可选活动分类和活动类型查询启用且未删除的活动列表，包含活动场次。
+     * 根据博物馆ID、可选活动分类和活动类型、可选预约日期查询启用且未删除的活动列表，包含活动场次。
+     * 若传入 appointmentDate，则每个场次会加载对应日期已预约人数（bookedCount）。
      */
-    List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId);
+    List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId, LocalDate appointmentDate);
 }

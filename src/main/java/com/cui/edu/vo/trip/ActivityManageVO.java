@@ -26,4 +26,7 @@ public class ActivityManageVO extends BasisVO {
 
     @ApiModelProperty(value = "活动分类，1：团队；2：个人")
     private Integer participationType;
+
+    @ApiModelProperty(value = "活动标签ID，按单个标签ID过滤")
+    private Long tagId;
 }

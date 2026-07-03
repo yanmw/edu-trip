@@ -17,4 +17,13 @@ public class ActivityFileVO extends BasisVO {
 
     @ApiModelProperty(value = "文件名称")
     private String fileName;
+
+    @ApiModelProperty(value = "版本")
+    private String version;
+
+    @ApiModelProperty(value = "主题")
+    private String theme;
+
+    @ApiModelProperty(value = "年龄段")
+    private String ageGroup;
 }

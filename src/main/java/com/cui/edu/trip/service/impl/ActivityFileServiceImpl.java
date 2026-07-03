@@ -30,7 +30,7 @@ public class ActivityFileServiceImpl extends ServiceImpl<ActivityFileMapper, Act
     /**
      * 分页过滤查询活动关联的文件列表
      *
-     * @param vo 包含分页信息及活动 ID、博物馆 ID、文件名称等过滤条件的 ActivityFileVO
+     * @param vo 包含分页信息及活动 ID、博物馆 ID、文件名称、版本、主题、年龄段等过滤条件的 ActivityFileVO
      * @return 分页结果 PageResult
      */
     @Override
@@ -49,7 +49,19 @@ public class ActivityFileServiceImpl extends ServiceImpl<ActivityFileMapper, Act
         if (StringUtils.isNotBlank(vo.getFileName())) {
             ew.like(ActivityFile.FILE_NAME, vo.getFileName());
         }
-        // 4. 仅查询未删除的有效文件
+        // 4. 精确匹配版本
+        if (StringUtils.isNotBlank(vo.getVersion())) {
+            ew.eq(ActivityFile.VERSION, vo.getVersion());
+        }
+        // 5. 精确匹配主题
+        if (StringUtils.isNotBlank(vo.getTheme())) {
+            ew.eq(ActivityFile.THEME, vo.getTheme());
+        }
+        // 6. 精确匹配年龄段
+        if (StringUtils.isNotBlank(vo.getAgeGroup())) {
+            ew.eq(ActivityFile.AGE_GROUP, vo.getAgeGroup());
+        }
+        // 7. 仅查询未删除的有效文件
         ew.eq(ActivityFile.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityFile.ID);
         page = super.page(page, ew);

@@ -1,20 +1,18 @@
 package com.cui.edu.trip.entity;
 
-
-
-
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.FieldFill;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import org.springframework.format.annotation.DateTimeFormat;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
-import java.time.LocalDateTime;
-import java.io.Serializable;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * <p>
@@ -26,7 +24,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@ApiModel(value="Evaluation对象", description="评价表")
+@ApiModel(value = "Evaluation对象", description = "评价表")
 public class Evaluation implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -58,6 +56,10 @@ public class Evaluation implements Serializable {
 
     @ApiModelProperty(value = "知识和沉浸感评分")
     private Integer knowledgeImmersionScore;
+
+    @ApiModelProperty(value = "博物馆ID（从关联订单中透传，非数据库列）")
+    @TableField(exist = false)
+    private Long museumId;
 
     @ApiModelProperty(value = "是否删除")
     private Integer isDeleted;

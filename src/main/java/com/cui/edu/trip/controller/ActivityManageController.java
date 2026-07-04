@@ -119,7 +119,7 @@ public class ActivityManageController {
     }
 
     /**
-     * 分页查询活动列表（供管理端使用，支持复杂的活动名称、类型、博物馆过滤条件）
+     * 分页查询活动列表（支持按活动名称模糊匹配，按活动类型、是否热门、所属博物馆、启用状态、参与形式以及标签 ID 等过滤）
      *
      * @param vo 包含分页和活动过滤字段的 ActivityManageVO 对象
      * @return 包含分页数据 (PageResult) 的 HttpResult 响应

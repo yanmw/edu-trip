@@ -3,17 +3,22 @@ package com.cui.edu.trip.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cui.edu.trip.entity.Evaluation;
+import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.mapper.EvaluationMapper;
+import com.cui.edu.trip.mapper.OrderMapper;
 import com.cui.edu.trip.service.EvaluationService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.vo.trip.EvaluationVO;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -25,6 +30,9 @@ import java.util.List;
  */
 @Service
 public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluation> implements EvaluationService {
+
+    @Autowired
+    private OrderMapper orderMapper;
 
     /**
      * 分页过滤查询有效评价列表
@@ -44,6 +52,24 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
         ew.eq(Evaluation.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(Evaluation.ID);
         page = super.page(page, ew);
+        // 3. 批量查询关联订单，将 museumId 填充到每条评价记录
+        List<Evaluation> records = page.getRecords();
+        if (!records.isEmpty()) {
+            List<Long> orderIds = records.stream()
+                    .map(Evaluation::getOrderId)
+                    .filter(id -> id != null)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!orderIds.isEmpty()) {
+                QueryWrapper<Order> orderQw = new QueryWrapper<>();
+                orderQw.in(Order.ID, orderIds)
+                        .select(Order.ID, Order.MUSEUM_ID);
+                Map<Long, Long> orderMuseumMap = orderMapper.selectList(orderQw).stream()
+                        .collect(Collectors.toMap(Order::getId, Order::getMuseumId,
+                                (existing, replacement) -> existing));
+                records.forEach(e -> e.setMuseumId(orderMuseumMap.get(e.getOrderId())));
+            }
+        }
         return PageResultUtil.getPageResult(page);
     }
 

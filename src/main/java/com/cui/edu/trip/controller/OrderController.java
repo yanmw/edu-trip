@@ -251,11 +251,13 @@ public class OrderController {
      * 根据游客微信 openId 或团队 ID 分页查询订单列表。
      *
      * <p>openId 用于查询游客个人订单，teamId 用于查询团队订单；两个参数至少传一个。
+     * 此外，支持传入批次号 (batchNo) 限定查询特定批次的游客订单。
      * 返回的每条主订单都会带 detailList 子订单集合，并补充博物馆、游客、团队、活动、场次等关联信息。</p>
      */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "根据游客openId或团队ID分页查询订单列表")
     @SaIgnore
+    @Log(title = "根据游客openId或团队ID分页查询订单")
     public HttpResult findPage(@RequestBody OrderVO vo) {
         if (ObjectUtil.isEmpty(vo)) {
             return HttpResult.errorBadRequest();
@@ -274,7 +276,7 @@ public class OrderController {
      * 管理端分页查询所有订单。
      *
      * <p>该接口不要求 openId 或 teamId，默认分页查询所有未删除订单；
-     * 可通过订单号、博物馆、订单状态、订单类型、是否核销、游客ID、团队ID、预约日期做筛选。
+     * 可通过订单号、博物馆、订单状态、订单类型、是否核销、游客ID、团队ID、批次号 (batchNo)、预约日期做筛选。
      * 返回结构与游客/团队订单列表一致，包含主订单、detailList 子订单及关联表信息。</p>
      */
     @PostMapping(value = "/findAdminPage")

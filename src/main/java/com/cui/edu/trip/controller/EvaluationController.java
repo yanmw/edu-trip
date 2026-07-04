@@ -92,9 +92,9 @@ public class EvaluationController {
     }
 
     /**
-     * 分页查询评价列表（支持按博物馆 ID、订单 ID 过滤）
+     * 分页查询评价列表（仅支持按订单 ID (orderId) 精确过滤）
      *
-     * @param vo 包含分页和查询条件的 EvaluationVO
+     * @param vo 包含分页和查询条件（orderId）的 EvaluationVO
      * @return 包含分页数据 (PageResult) 的 HttpResult 响应
      */
     @PostMapping(value = "/findPage")

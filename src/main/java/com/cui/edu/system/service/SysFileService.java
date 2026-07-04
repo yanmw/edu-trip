@@ -4,6 +4,8 @@ import com.cui.edu.system.entity.SysFile;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 /**
  * <p>
  * 系统文件上传表 服务类
@@ -18,8 +20,8 @@ public interface SysFileService extends IService<SysFile> {
      * 上传文件到本地，并返回可访问地址。
      *
      * @param file 文件
-     * @return 文件访问地址
+     * @return 文件访问信息 Map，包含 "path" 或者错误信息 "msg"
      */
-    String upload(MultipartFile file);
+    Map<String, Object> upload(MultipartFile file);
 
 }

@@ -3,6 +3,7 @@ package com.cui.edu.system.controller;
 
 import cn.dev33.satoken.annotation.SaIgnore;
 import com.cui.edu.common.HttpResult;
+import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.SysFile;
 import com.cui.edu.system.service.SysFileService;
 import com.cui.edu.util.Log;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -55,8 +58,11 @@ public class SysFileController {
     @ApiOperation("上传文件")
     @Log(title = "上传文件")
     public HttpResult upload(@ApiParam(value = "文件", required = true) @RequestParam("file") MultipartFile file) {
-        String requestPath = sysFileService.upload(file);
-        return HttpResult.ok(requestPath);
+        Map<String, Object> result = sysFileService.upload(file);
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
+        }
+        return HttpResult.ok(result.get("path"));
     }
 
     @GetMapping(value = "/access/{id}")

@@ -54,7 +54,7 @@ public interface OrderService extends IService<Order> {
      * @param tid 银联终端号
      * @param requestString 银联原始回调内容或银联查询结果JSON，用于日志追踪
      */
-    void unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString);
+    String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString);
 
     /**
      * 处理银联退款成功回调。
@@ -78,7 +78,7 @@ public interface OrderService extends IService<Order> {
      * @param refundTime 银联退款完成时间，对应银联回调 refundPayTime
      * @param requestString 银联原始退款回调内容，用于日志追踪
      */
-    void unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString);
+    String unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString);
 
     /**
      * 处理银联退款查询明确失败的结果。

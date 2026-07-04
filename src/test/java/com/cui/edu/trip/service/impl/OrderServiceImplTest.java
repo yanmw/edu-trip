@@ -372,7 +372,7 @@ class OrderServiceImplTest {
         orderDetail.setId(11L);
         orderDetail.setOrderId(7L);
         orderDetail.setOrderNo("202606170001");
-        orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue());
+        orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue());
         when(orderDetailService.getById(11L)).thenReturn(orderDetail);
 
         Order order = new Order();
@@ -388,7 +388,7 @@ class OrderServiceImplTest {
 
         Map result = orderService.refund(11L, "游客临时取消");
 
-        assertEquals("订单已核销，无法退款", result.get(SysConstants.MSG));
+        assertEquals("已操作退款，请勿重复操作", result.get(SysConstants.MSG));
         ArgumentCaptor<OrderLog> logCaptor = ArgumentCaptor.forClass(OrderLog.class);
         verify(orderLogService).saveLog(logCaptor.capture());
         OrderLog orderLog = logCaptor.getValue();

@@ -7,7 +7,6 @@ import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
-import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.service.EvaluationService;
 import com.cui.edu.util.Log;
@@ -44,30 +43,20 @@ public class EvaluationController {
     /**
      * 新增活动/订单评价
      * <p>
-     * 业务流程：
-     * 1. 验证入参 record 非空。
-     * 2. 对新增的评价记录进行默认初始化状态（如将 is_deleted 默认设为 0）。
-     * 3. 调用 EvaluationService.save 写入数据库。
+     * 校验请求体非空后，将入参全量委托给 EvaluationService.saveEvaluation 处理。
+     * 业务校验（orderId 非空、一单只评一次等）均在 Service 层完成。
      *
      * @param record 评价实体信息
-     * @return 包含评价主键 ID 的 HttpResult
+     * @return Service 层返回的 HttpResult（含主键 ID 或错误信息）
      */
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增评价")
     @SaIgnore
     public HttpResult save(@RequestBody Evaluation record) {
-        // 1. 校验实体非空
-        if (BeanUtil.isNotEmpty(record)) {
-            // 2. 初始化未删除状态
-            if (record.getIsDeleted() == null) {
-                record.setIsDeleted(SysConstants.IS_FALSE);
-            }
-            // 3. 执行写入
-            evaluationService.save(record);
-            return HttpResult.ok(record.getId());
-        } else {
+        if (BeanUtil.isEmpty(record)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
+        return evaluationService.saveEvaluation(record);
     }
 
     /**

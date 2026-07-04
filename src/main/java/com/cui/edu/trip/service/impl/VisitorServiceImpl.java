@@ -6,8 +6,10 @@ import cn.hutool.poi.excel.ExcelWriter;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.cui.edu.config.exception.MyException;
+import com.cui.edu.common.SysConstants;
 import com.cui.edu.common.HttpStatus;
+import java.util.Map;
+import java.util.HashMap;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
@@ -99,11 +101,26 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
      * </ol>
      * </p>
      */
+    private Map<String, Object> msgResult(String msg) {
+        Map<String, Object> result = new HashMap<>(1);
+        result.put(SysConstants.MSG, msg);
+        return result;
+    }
+
     @Override
-    public void saveVisitor(Visitor record) {
-        validateMobile(record.getMobile());
-        validateIdCardFormat(record.getIdCard());
-        validateIdCardByMuseumConfig(record);
+    public Map<String, Object> saveVisitor(Visitor record) {
+        String errorMsg = validateMobile(record.getMobile());
+        if (errorMsg != null) {
+            return msgResult(errorMsg);
+        }
+        errorMsg = validateIdCardFormat(record.getIdCard());
+        if (errorMsg != null) {
+            return msgResult(errorMsg);
+        }
+        errorMsg = validateIdCardByMuseumConfig(record);
+        if (errorMsg != null) {
+            return msgResult(errorMsg);
+        }
         // 若 wechat_openid 已存在，则合并到已有记录（更新）而非报错
         mergeExistingVisitorByOpenid(record);
         // 身份证优先补省市和性别；身份证为空时，按手机号号段补省市，性别置为未知
@@ -113,9 +130,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
         }
         // 新增时检查 openid 是否曾被软删除，是则恢复已有记录而非插入新行
         if (record.getId() == null && restoreDeletedVisitor(record)) {
-            return;
+            return new HashMap<>();
         }
         super.saveOrUpdate(record);
+        return new HashMap<>();
     }
 
     /**
@@ -123,27 +141,34 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
      * <p>
      * 采用两阶段处理：
      * <ol>
-     *   <li>第一阶段：遍历所有数据行，逐行校验手机号和身份证格式，收集所有错误，不中断。</li>
+     *   <li>第一阶段：遍历所有数据行，逐行校验手机号 and 身份证格式，收集所有错误，不中断。</li>
      *   <li>第二阶段：若第一阶段存在错误，汇总后返回前端，不执行入库；全部通过才批量插入。</li>
      * </ol>
      * 这样前端可以一次性看到所有问题行，而不是每次只看到第一个错误。
      * </p>
      *
-     * @return 实际导入的行数
+     * @return 实际导入结果 Map
      */
     @Override
-    public int importExcel(MultipartFile file, Long teamId, String batchNo) {
+    public Map<String, Object> importExcel(MultipartFile file, Long teamId, String batchNo) {
+        Map<String, Object> result = new HashMap<>();
         if (file == null || file.isEmpty()) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "导入文件不能为空");
+            result.put(SysConstants.MSG, "导入文件不能为空");
+            return result;
         }
 
         try (ExcelReader reader = ExcelUtil.getReader(file.getInputStream())) {
             // 第一步：校验表头，必须且只能包含姓名、手机号、身份证号
-            validateImportHeaders(reader.readRow(0));
+            String headerError = validateImportHeaders(reader.readRow(0));
+            if (headerError != null) {
+                result.put(SysConstants.MSG, headerError);
+                return result;
+            }
             addHeaderAlias(reader);
             List<Visitor> visitorList = reader.readAll(Visitor.class);
             if (visitorList == null || visitorList.isEmpty()) {
-                return 0;
+                result.put("count", 0);
+                return result;
             }
 
             // 第二步：逐行校验，收集所有错误（不立即中断，让前端一次看到所有问题）
@@ -152,21 +177,20 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
                 Visitor visitor = visitorList.get(i);
                 // Excel 第1行为表头，数据从第2行开始，行号 = 索引 + 2
                 int rowNum = i + 2;
-                try {
-                    validateMobile(visitor.getMobile());
-                } catch (MyException e) {
-                    errors.add("第" + rowNum + "行：" + e.getMessage());
+                String mobileError = validateMobile(visitor.getMobile());
+                if (mobileError != null) {
+                    errors.add("第" + rowNum + "行：" + mobileError);
                 }
-                try {
-                    validateIdCardFormat(visitor.getIdCard());
-                } catch (MyException e) {
-                    errors.add("第" + rowNum + "行：" + e.getMessage());
+                String idCardError = validateIdCardFormat(visitor.getIdCard());
+                if (idCardError != null) {
+                    errors.add("第" + rowNum + "行：" + idCardError);
                 }
             }
 
-            // 第三步：有校验错误时，汇总后统一抛出，不执行入库
+            // 第三步：有校验错误时，汇总后统一返回，不执行入库
             if (!errors.isEmpty()) {
-                throw new MyException(HttpStatus.SC_BAD_REQUEST, String.join("\n", errors));
+                result.put(SysConstants.MSG, String.join("\n", errors));
+                return result;
             }
 
             // 第四步：全部校验通过，补全字段后批量入库
@@ -180,9 +204,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
                 fillProvinceCityAndGender(visitor);
             }
             super.saveBatch(visitorList);
-            return visitorList.size();
+            result.put("count", visitorList.size());
+            return result;
         } catch (IOException e) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel导入失败");
+            log.error("Excel导入处理文件IO异常", e);
+            result.put(SysConstants.MSG, "Excel导入失败");
+            return result;
         }
     }
 
@@ -372,108 +399,98 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
     /**
      * 校验手机号：不能为空，且必须符合大陆手机号格式（1[3-9]开头，共 11 位）。
      */
-    private void validateMobile(String mobile) {
+    private String validateMobile(String mobile) {
         if (StringUtils.isBlank(mobile)) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号不能为空");
+            return "手机号不能为空";
         }
         if (!MOBILE_PATTERN.matcher(mobile).matches()) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "手机号格式不正确");
+            return "手机号格式不正确";
         }
+        return null;
     }
 
     /**
      * 校验身份证格式（身份证可为空，为空时直接跳过）。
-     * <p>
-     * 校验内容：
-     * <ul>
-     *   <li>15 位：全数字 + 出生日期合法 + 地址码存在</li>
-     *   <li>18 位：前 17 位数字末位数字或X + 出生日期合法 + 地址码存在 + 校验码正确</li>
-     *   <li>其他长度或格式：直接报错</li>
-     * </ul>
-     * </p>
      */
-    private void validateIdCardFormat(String idCard) {
+    private String validateIdCardFormat(String idCard) {
         if (StringUtils.isBlank(idCard)) {
-            return;
+            return null;
         }
         if (ID_CARD_15_PATTERN.matcher(idCard).matches()) {
             // 15 位身份证出生年份补全为 19xx
-            validateIdCardBirthDate("19" + idCard.substring(6, 12));
-            validateIdCardAddressCode(idCard.substring(0, 6));
-            return;
+            String birthMsg = validateIdCardBirthDate("19" + idCard.substring(6, 12));
+            if (birthMsg != null) return birthMsg;
+            String addrMsg = validateIdCardAddressCode(idCard.substring(0, 6));
+            if (addrMsg != null) return addrMsg;
+            return null;
         }
         if (ID_CARD_18_PATTERN.matcher(idCard).matches()) {
-            validateIdCardBirthDate(idCard.substring(6, 14));
-            validateIdCardAddressCode(idCard.substring(0, 6));
-            validateIdCardCheckCode(idCard);
-            return;
+            String birthMsg = validateIdCardBirthDate(idCard.substring(6, 14));
+            if (birthMsg != null) return birthMsg;
+            String addrMsg = validateIdCardAddressCode(idCard.substring(0, 6));
+            if (addrMsg != null) return addrMsg;
+            String checkMsg = validateIdCardCheckCode(idCard);
+            if (checkMsg != null) return checkMsg;
+            return null;
         }
-        throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号格式不正确");
+        return "身份证号格式不正确";
     }
 
     /**
      * 校验身份证中的出生日期是否为合法日期（使用严格模式，拒绝如 20000229 等不合法日期）。
-     *
-     * @param birthDate 格式为 yyyyMMdd 的出生日期字符串
      */
-    private void validateIdCardBirthDate(String birthDate) {
+    private String validateIdCardBirthDate(String birthDate) {
         try {
             LocalDate.parse(birthDate, STRICT_DATE_FORMATTER);
+            return null;
         } catch (Exception e) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号出生日期不正确");
+            return "身份证号出生日期不正确";
         }
     }
 
     /**
      * 校验 18 位身份证的校验码（GB 11643-1999 算法）。
-     * <p>
-     * 算法：前 17 位按加权因子加权求和，对 11 取模，查对照表得预期校验码，
-     * 与第 18 位比较（不区分大小写）。
-     * </p>
      */
-    private void validateIdCardCheckCode(String idCard) {
+    private String validateIdCardCheckCode(String idCard) {
         int sum = 0;
         for (int i = 0; i < ID_CARD_WEIGHT.length; i++) {
             sum += (idCard.charAt(i) - '0') * ID_CARD_WEIGHT[i];
         }
         char expectedCheckCode = ID_CARD_CHECK_CODE[sum % 11];
         if (Character.toUpperCase(idCard.charAt(17)) != expectedCheckCode) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号校验码不正确");
+            return "身份证号校验码不正确";
         }
+        return null;
     }
 
     /**
      * 校验身份证地址码前 6 位对应的省级行政区是否存在于行政区划表中。
-     *
-     * @param addressCode 身份证前 6 位地址码
      */
-    private void validateIdCardAddressCode(String addressCode) {
+    private String validateIdCardAddressCode(String addressCode) {
         String provinceCode = addressCode.substring(0, 2) + "0000";
         if (getAdministrativeDivision(provinceCode) == null) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "身份证号地址码不正确");
+            return "身份证号地址码不正确";
         }
+        return null;
     }
 
     /**
      * 校验博物馆 ID 是否合法（修改时允许从已有记录中取 museumId）。
-     * <p>
-     * 校验内容：museumId 不能为空，且对应博物馆必须存在。
-     * 不再强制要求身份证非空，身份证是否必填由调用方或前端控制。
-     * </p>
      */
-    private void validateIdCardByMuseumConfig(Visitor record) {
+    private String validateIdCardByMuseumConfig(Visitor record) {
         // 修改时若未传 museumId，从已有记录中补充
         Visitor oldVisitor = record.getId() == null ? null : super.getById(record.getId());
         Long museumId = record.getMuseumId() != null
                 ? record.getMuseumId()
                 : oldVisitor == null ? null : oldVisitor.getMuseumId();
         if (museumId == null) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "博物馆ID不能为空");
+            return "博物馆ID不能为空";
         }
         Museum museum = museumService.getById(museumId);
         if (museum == null) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "博物馆不存在");
+            return "博物馆不存在";
         }
+        return null;
     }
 
     /**
@@ -635,9 +652,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
      * 空白列会被忽略；出现未知列或列数不足时均报错。
      * </p>
      */
-    private void validateImportHeaders(List<Object> headers) {
+    private String validateImportHeaders(List<Object> headers) {
         if (headers == null || headers.isEmpty()) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel表头不能为空");
+            return "Excel表头不能为空";
         }
 
         int headerCount = 0;
@@ -649,14 +666,15 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             headerCount++;
             String fieldName = convertHeaderToFieldName(header.toString().trim());
             if (fieldName == null) {
-                throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel只能包含手机号、身份证号、姓名");
+                return "Excel只能包含手机号、身份证号、姓名";
             }
             actualFields.add(fieldName);
         }
 
         if (headerCount != IMPORT_REQUIRED_FIELDS.size() || !IMPORT_REQUIRED_FIELDS.equals(actualFields)) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "Excel必须且只能包含手机号、身份证号、姓名");
+            return "Excel必须且只能包含手机号、身份证号、姓名";
         }
+        return null;
     }
 
     /**

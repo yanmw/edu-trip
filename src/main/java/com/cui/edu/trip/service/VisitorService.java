@@ -7,6 +7,7 @@ import com.cui.edu.vo.trip.VisitorVO;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -20,13 +21,18 @@ public interface VisitorService extends IService<Visitor> {
 
     /**
      * 保存游客；保存前根据身份证或手机号补齐省市和性别。
+     * 
+     * @param record 游客信息
+     * @return 包含错误消息的 Map (若校验失败) 或空 Map (成功)
      */
-    void saveVisitor(Visitor record);
+    Map<String, Object> saveVisitor(Visitor record);
 
     /**
      * 导入游客Excel，并为导入数据统一设置团队ID。
+     * 
+     * @return 包含错误消息的 Map 或包含 "count" 成功导入行数的 Map
      */
-    int importExcel(MultipartFile file, Long teamId, String batchNo);
+    Map<String, Object> importExcel(MultipartFile file, Long teamId, String batchNo);
 
     /**
      * 生成游客导入模板。

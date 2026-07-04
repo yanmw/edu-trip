@@ -2,6 +2,8 @@ package com.cui.edu.trip.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.cui.edu.common.HttpResult;
+import com.cui.edu.common.HttpStatus;
 import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.mapper.EvaluationMapper;
@@ -12,6 +14,7 @@ import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
 import com.cui.edu.vo.trip.EvaluationVO;
+import cn.hutool.core.util.ObjectUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +36,36 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
 
     @Autowired
     private OrderMapper orderMapper;
+
+    /**
+     * 新增评价
+     * <p>
+     * 1. 校验 orderId 不能为空。
+     * 2. 查询该订单是否已存在未删除的评价，有则返回错误提示。
+     * 3. 初始化 is_deleted 默认字段。
+     * 4. 写入数据库并返回新评价主键 ID。
+     *
+     * @param record 评价实体
+     * @return HttpResult 成功返回主键 ID，校验不通过时返回错误信息
+     */
+    @Override
+    public HttpResult saveEvaluation(Evaluation record) {
+        // 1. 校验订单 ID 非空
+        if (ObjectUtil.isEmpty(record.getOrderId())) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "订单ID不能为空");
+        }
+        // 2. 一单只评一次：查询该订单是否已存在未删除的评价
+        if (findByOrderId(record.getOrderId()) != null) {
+            return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "该订单已评价过，每个订单仅允许评价一次");
+        }
+        // 3. 初始化未删除状态
+        if (record.getIsDeleted() == null) {
+            record.setIsDeleted(SysConstants.IS_FALSE);
+        }
+        // 4. 写入数据库
+        super.save(record);
+        return HttpResult.ok(record.getId());
+    }
 
     /**
      * 分页过滤查询有效评价列表

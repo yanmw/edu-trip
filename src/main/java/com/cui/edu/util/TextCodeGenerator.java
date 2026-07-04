@@ -46,7 +46,7 @@ public class TextCodeGenerator {
         } else {
             log.info("获取锁失败");
             distributedLockHandler.releaseLock(lock);
-            throw new MyException(HttpStatus.SC_INTERNAL_SERVER_ERROR, "获取锁失败");
+            throw new RuntimeException("获取锁失败");
         }
     }
 }

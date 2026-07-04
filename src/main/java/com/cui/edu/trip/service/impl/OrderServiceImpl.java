@@ -351,7 +351,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map confirmPayResult(String orderNo) throws Exception {
-        Order order = getRequiredOrderForPayQuery(orderNo);
+        Order order = getOrderByOrderNo(orderNo);
+        if (ObjectUtil.isEmpty(order)) {
+            return msgResult("订单不存在，订单号：" + orderNo);
+        }
 
         // 本地已经成功的订单直接返回，避免重复查银联。
         if (Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
@@ -369,6 +372,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         // 以银联查询结果为准，查询日志单独记录，方便排查前端确认支付未闭环的问题。
         Museum museum = getRequiredUnionPayMuseum(order);
+        if (museum == null) {
+            return buildPayQueryResult(order, false, null, "订单所属博物馆银联配置不存在，订单号：" + order.getOrderNo());
+        }
         JSONObject queryResult = unionPayService.appletQuery(orderNo, museum.getMid(), museum.getTid());
         saveUnionPayQueryLog(order, OrderLog.ACTION_PAY_QUERY, OrderLog.SOURCE_USER,
                 buildUnionPayQueryRequest(orderNo, museum), queryResult, null);
@@ -384,8 +390,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (isUnionPayTradeSuccess(queryResult)) {
             String tradeNo = queryResult.getString("targetOrderId");
             // 银联主动查询确认支付成功时，直接复用支付回调逻辑，弥补银联回调未送达的情况。
-            unionPayNotify(orderNo, tradeNo, queryResult.getInteger("totalAmount"),
+            String notifyError = unionPayNotify(orderNo, tradeNo, queryResult.getInteger("totalAmount"),
                     queryResult.getString("mid"), queryResult.getString("tid"), JSON.toJSONString(queryResult));
+            if (notifyError != null) {
+                return buildPayQueryResult(order, false, unionPayStatus, notifyError);
+            }
             Order latestOrder = getOrderByOrderNo(orderNo);
             return buildPayQueryResult(latestOrder, true, unionPayStatus, "支付成功");
         }
@@ -400,20 +409,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         return buildPayQueryResult(order, false, unionPayStatus, "银联暂未确认支付成功，请稍后重试");
-    }
-
-    /**
-     * 查询主动支付确认对应的本地订单。
-     *
-     * @param orderNo 系统订单号
-     * @return 本地订单
-     */
-    private Order getRequiredOrderForPayQuery(String orderNo) {
-        Order order = getOrderByOrderNo(orderNo);
-        if (ObjectUtil.isEmpty(order)) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "订单不存在，订单号：" + orderNo);
-        }
-        return order;
     }
 
     /**
@@ -451,20 +446,29 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString) {
+    public String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString) {
         Order order = null;
         try {
             // 第一步：根据系统订单号查询主订单。银联回调里的merOrderId就是本系统订单号。
-            order = getRequiredOrderForPayNotify(orderNo, tradeNo);
+            order = getOrderByOrderNo(orderNo);
+            if (ObjectUtil.isEmpty(order)) {
+                return "该银联支付回调时，订单不存在，银联订单：" + tradeNo;
+            }
             Integer beforeOrderStatus = order.getOrderStatus();
 
             // 第二步：校验金额、商户号、终端号，避免伪造或串单回调修改本地订单。
-            checkPayNotifyBusiness(order, totalAmount, mid, tid);
+            String businessError = checkPayNotifyBusiness(order, totalAmount, mid, tid);
+            if (businessError != null) {
+                return businessError;
+            }
 
             // 第三步：如果订单已经进入退款链路，说明支付成功状态早已处理过，不能被迟到的支付回调覆盖。
-            if (shouldSkipPayNotify(order)) {
-                savePayNotifySkipLog(order, tradeNo, totalAmount, requestString, beforeOrderStatus);
-                return;
+            if (isRefundOrderStatus(order.getOrderStatus())) {
+                return "该银联订单已发生退款，不能继续修改为支付成功";
+            }
+            if (Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
+                log.info("该银联订单已支付成功，此次不再处理");
+                return null;
             }
 
             // 第四步：更新主订单为支付成功，并补充银联订单号；退款字段为空时初始化为0，便于后续退款累计。
@@ -477,25 +481,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             redisUtils.del(order.getOrderNo());
 
             savePayNotifySuccessLog(order, tradeNo, totalAmount, requestString, beforeOrderStatus, affectedDetailIds);
+            return null;
         } catch (RuntimeException e) {
             savePayNotifyExceptionLog(order, orderNo, tradeNo, totalAmount, requestString, e);
             throw e;
         }
-    }
-
-    /**
-     * 查询支付回调对应的本地订单。
-     *
-     * @param orderNo 系统订单号，来自银联 merOrderId
-     * @param tradeNo 银联订单号，仅用于异常提示和排查日志
-     * @return 本地订单
-     */
-    private Order getRequiredOrderForPayNotify(String orderNo, String tradeNo) {
-        Order order = getOrderByOrderNo(orderNo);
-        if (ObjectUtil.isEmpty(order)) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "该银联支付回调时，订单不存在，银联订单：" + tradeNo);
-        }
-        return order;
     }
 
     /**
@@ -506,37 +496,21 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param mid         银联商户号
      * @param tid         银联终端号
      */
-    private void checkPayNotifyBusiness(Order order, Integer totalAmount, String mid, String tid) {
+    private String checkPayNotifyBusiness(Order order, Integer totalAmount, String mid, String tid) {
         if (ObjectUtil.isNotEmpty(totalAmount) && !totalAmount.equals(order.getPayAmount())) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "银联支付金额与本地订单金额不一致，订单号：" + order.getOrderNo());
+            return "银联支付金额与本地订单金额不一致，订单号：" + order.getOrderNo();
         }
         Museum museum = getRequiredUnionPayMuseum(order);
+        if (museum == null) {
+            return "订单所属博物馆银联配置不存在，订单号：" + order.getOrderNo();
+        }
         if (ObjectUtil.isNotEmpty(mid) && !mid.equals(museum.getMid())) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "银联商户号与订单所属博物馆不一致，订单号：" + order.getOrderNo());
+            return "银联商户号与订单所属博物馆不一致，订单号：" + order.getOrderNo();
         }
         if (ObjectUtil.isNotEmpty(tid) && !tid.equals(museum.getTid())) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "银联终端号与订单所属博物馆不一致，订单号：" + order.getOrderNo());
+            return "银联终端号与订单所属博物馆不一致，订单号：" + order.getOrderNo();
         }
-    }
-
-    /**
-     * 判断支付回调是否需要跳过。
-     *
-     * <p>支付回调可能重复推送，也可能晚于退款回调到达。订单已支付成功时直接幂等返回；
-     * 订单已进入退款链路时不能再被支付回调覆盖为支付成功。</p>
-     *
-     * @param order 本地订单
-     * @return true 表示当前支付回调不再继续处理
-     */
-    private boolean shouldSkipPayNotify(Order order) {
-        if (isRefundOrderStatus(order.getOrderStatus())) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "该银联订单已发生退款，不能继续修改为支付成功");
-        }
-        if (Order.OrderStatusEnum.SUCCESS.getValue().equals(order.getOrderStatus())) {
-            log.info("该银联订单已支付成功，此次不再处理");
-            return true;
-        }
-        return false;
+        return null;
     }
 
     /**
@@ -626,8 +600,17 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString) {
-        Lock lock = null;
+    public String unionRefundNotify(String orderNo, String tradeNo, Integer money, String refundOrderId, String refundTime, String requestString) {
+        if (ObjectUtil.isEmpty(refundOrderId)) {
+            return "退款订单号不能为空";
+        }
+
+        Lock lock = new Lock("unionRefundNotify:" + refundOrderId, UUID.randomUUID().toString());
+        boolean locked = distributedLockHandler.tryLock(lock);
+        if (!locked) {
+            return "退款回调处理中，请勿重复操作";
+        }
+
         Order order = null;
         List<OrderDetail> orderDetailList = Collections.emptyList();
         Integer beforeOrderStatus = null;
@@ -635,21 +618,20 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         Integer beforeRefundAmount = null;
         Integer beforeRefundQuantity = null;
         try {
-            // 第一步：退款回调必须带退款订单号。本系统用refundOrderId定位本次退款涉及的子订单。
-            checkRefundNotifyParam(refundOrderId);
-
-            // 第二步：同一个银联退款单号只允许一个回调线程处理，避免并发重复更新退款状态。
-            lock = lockRefundNotify(refundOrderId);
-
             // 第三步：根据系统订单号查询主订单。主订单不存在说明本地无法承接这笔退款回调。
-            order = getRequiredOrderForRefundNotify(orderNo);
+            order = getOrderByOrderNo(orderNo);
+            if (ObjectUtil.isEmpty(order)) {
+                return "订单不存在，订单号：" + orderNo;
+            }
             beforeOrderStatus = order.getOrderStatus();
             beforeRefundAmount = order.getRefundAmount();
             beforeRefundQuantity = order.getRefundQuantity();
 
             // 第四步：根据退款订单号查询本次退款涉及的子订单。
-            // 发起退款时应先把这些子订单写入refundId并置为REFUNDING。
-            orderDetailList = getRequiredRefundDetails(orderNo, refundOrderId);
+            orderDetailList = getOrderDetailsByRefundId(orderNo, refundOrderId);
+            if (orderDetailList.isEmpty()) {
+                return "未查询到退款子订单";
+            }
             beforeDetailStatus = orderDetailList.get(0).getOrderStatus();
 
             // 第五步：银联可能重复推送退款回调，只要本次退款单里已有子订单完成退款，就认为已处理过并直接返回。
@@ -657,18 +639,35 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 saveRefundNotifySkipLog(order, orderDetailList, tradeNo, money, refundOrderId, refundTime,
                         requestString, "该退款单已处理过，本次退款回调幂等返回", beforeOrderStatus, beforeDetailStatus,
                         beforeRefundAmount, beforeRefundQuantity);
-                return;
+                return null;
             }
 
-            // 第六步：把本次退款单中仍处于退款中的子订单改为退款成功，并补充退款完成时间、退款金额。
-            boolean hasRefunding = markRefundingDetailsRefunded(orderDetailList, money, refundTime);
+            // 第六步：校验并标记本次退款单中仍处于退款中的子订单为退款成功
+            String amountError = checkRefundNotifyAmount(orderDetailList, money);
+            if (amountError != null) {
+                return amountError;
+            }
+
+            LocalDateTime refundDateTime = parseRefundTime(refundTime);
+            boolean hasRefunding = false;
+            for (OrderDetail orderDetail : orderDetailList) {
+                if (!OrderDetail.OrderDetailStatusEnum.REFUNDING.getValue().equals(orderDetail.getOrderStatus())) {
+                    continue;
+                }
+                hasRefunding = true;
+                orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.REFUND.getValue());
+                orderDetail.setRefundTime(refundDateTime);
+                if (ObjectUtil.isEmpty(orderDetail.getRefundAmount())) {
+                    orderDetail.setRefundAmount(orderDetail.getOrderAmount());
+                }
+            }
 
             // 第七步：如果本次退款单下没有退款中的子订单，说明状态已被其他流程处理，不再改主订单。
             if (!hasRefunding) {
                 saveRefundNotifySkipLog(order, orderDetailList, tradeNo, money, refundOrderId, refundTime,
                         requestString, "该退款单下没有退款中的子订单，本次退款回调不修改订单", beforeOrderStatus, beforeDetailStatus,
                         beforeRefundAmount, beforeRefundQuantity);
-                return;
+                return null;
             }
             orderDetailService.updateBatchById(orderDetailList);
 
@@ -676,14 +675,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             refreshOrderRefundInfo(order);
             saveRefundNotifySuccessLog(order, orderDetailList, tradeNo, money, refundOrderId, refundTime,
                     requestString, beforeOrderStatus, beforeDetailStatus, beforeRefundAmount, beforeRefundQuantity);
+            return null;
         } catch (RuntimeException e) {
             saveRefundNotifyExceptionLog(order, orderNo, tradeNo, money, refundOrderId, refundTime, requestString, e);
             throw e;
         } finally {
             // 第九步：无论回调处理成功、返回还是异常，都释放本次退款单的分布式锁。
-            if (lock != null) {
-                distributedLockHandler.releaseLock(lock);
-            }
+            distributedLockHandler.releaseLock(lock);
         }
     }
 
@@ -784,57 +782,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      *
      * @param refundOrderId 退款订单号，用于定位本次退款涉及的子订单
      */
-    private void checkRefundNotifyParam(String refundOrderId) {
-        if (ObjectUtil.isEmpty(refundOrderId)) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "退款订单号不能为空");
-        }
-    }
-
-    /**
-     * 为退款回调加分布式锁。
-     *
-     * <p>同一个 refundOrderId 只允许一个线程处理，防止银联重复通知或并发补偿导致重复更新。</p>
-     *
-     * @param refundOrderId 退款订单号
-     * @return 已获取的锁对象，调用方负责释放
-     */
-    private Lock lockRefundNotify(String refundOrderId) {
-        Lock lock = new Lock("unionRefundNotify:" + refundOrderId, UUID.randomUUID().toString());
-        boolean locked = distributedLockHandler.tryLock(lock);
-        if (!locked) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "退款回调处理中，请勿重复操作");
-        }
-        return lock;
-    }
-
-    /**
-     * 查询退款回调对应的主订单。
-     *
-     * @param orderNo 系统订单号
-     * @return 本地主订单
-     */
-    private Order getRequiredOrderForRefundNotify(String orderNo) {
-        Order order = getOrderByOrderNo(orderNo);
-        if (ObjectUtil.isEmpty(order)) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "订单不存在，订单号：" + orderNo);
-        }
-        return order;
-    }
-
-    /**
-     * 查询本次退款单涉及的子订单。
-     *
-     * @param orderNo       系统订单号
-     * @param refundOrderId 退款订单号
-     * @return 本次退款涉及的子订单列表
-     */
-    private List<OrderDetail> getRequiredRefundDetails(String orderNo, String refundOrderId) {
-        List<OrderDetail> orderDetailList = getOrderDetailsByRefundId(orderNo, refundOrderId);
-        if (orderDetailList.isEmpty()) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "未查询到退款子订单");
-        }
-        return orderDetailList;
-    }
+    // 移除了不再使用的 checkRefundNotifyParam, lockRefundNotify, getRequiredOrderForRefundNotify, getRequiredRefundDetails 方法
 
     /**
      * 判断本次退款单是否已经处理过。
@@ -887,9 +835,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param orderDetailList 本次退款单涉及的子订单
      * @param money           银联回调本次退款总金额
      */
-    private void checkRefundNotifyAmount(List<OrderDetail> orderDetailList, Integer money) {
+    private String checkRefundNotifyAmount(List<OrderDetail> orderDetailList, Integer money) {
         if (ObjectUtil.isEmpty(money)) {
-            return;
+            return null;
         }
         int localRefundAmount = 0;
         for (OrderDetail orderDetail : orderDetailList) {
@@ -900,12 +848,13 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                     ? orderDetail.getOrderAmount() : orderDetail.getRefundAmount();
         }
         if (localRefundAmount == 0) {
-            return;
+            return null;
         }
         if (localRefundAmount != money) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "银联退款金额与本地退款金额不一致，退款单号："
-                    + orderDetailList.get(0).getRefundId());
+            return "银联退款金额与本地退款金额不一致，退款单号："
+                    + orderDetailList.get(0).getRefundId();
         }
+        return null;
     }
 
     /**
@@ -928,6 +877,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         Museum museum = getRequiredUnionPayMuseum(order);
+        if (museum == null) {
+            log.error("订单过期补偿失败，订单所属博物馆银联配置不存在，订单号：{}", orderNo);
+            return;
+        }
 
         // 15分钟内可能出现银联已支付但回调未到的情况，这里向银联兜底查询一次。
         JSONObject queryResult = unionPayService.appletQuery(orderNo, museum.getMid(), museum.getTid());
@@ -992,7 +945,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private Museum getRequiredUnionPayMuseum(Order order) {
         Museum museum = museumService.getById(order.getMuseumId());
         if (ObjectUtil.isEmpty(museum) || ObjectUtil.isEmpty(museum.getMid()) || ObjectUtil.isEmpty(museum.getTid())) {
-            throw new MyException(HttpStatus.SC_MY_ERROR, "订单所属博物馆银联配置不存在，订单号：" + order.getOrderNo());
+            return null;
         }
         return museum;
     }
@@ -1600,6 +1553,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         // 第二步：放弃前先查银联，防止用户实际已支付但本地还没收到回调。
         Museum museum = getRequiredUnionPayMuseum(order);
+        if (museum == null) {
+            return msgResult("订单所属博物馆银联配置不存在，订单号：" + order.getOrderNo());
+        }
         JSONObject queryResult = unionPayService.appletQuery(orderNo, museum.getMid(), museum.getTid());
         saveUnionPayQueryLog(order, OrderLog.ACTION_ORDER_ABANDON, OrderLog.SOURCE_USER,
                 buildUnionPayQueryRequest(orderNo, museum), queryResult, "用户主动放弃支付前查询银联订单状态");

@@ -7,7 +7,8 @@ import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
-import com.cui.edu.config.exception.MyException;
+import com.cui.edu.common.SysConstants;
+import java.util.Map;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.service.VisitorService;
 import com.cui.edu.util.Log;
@@ -72,12 +73,9 @@ public class VisitorController {
     public HttpResult save(@RequestBody Visitor record) {
         // record 为空对象时直接拒绝，避免无意义的下游调用
         if (BeanUtil.isNotEmpty(record)) {
-            try {
-                visitorService.saveVisitor(record);
-            } catch (MyException e) {
-                // 业务校验失败（如手机号格式错误、博物馆不存在等），直接返回错误信息给前端
-                // 不向上抛出，避免触发全局异常处理器返回 500
-                return HttpResult.error(e.getCode(), e.getMessage());
+            Map<String, Object> result = visitorService.saveVisitor(record);
+            if (result.containsKey(SysConstants.MSG)) {
+                return HttpResult.error(result.get(SysConstants.MSG).toString());
             }
             // 保存成功后返回游客主键 ID，供前端后续使用
             return HttpResult.ok(record.getId());
@@ -107,14 +105,11 @@ public class VisitorController {
         if (file == null || file.isEmpty() || ObjectUtil.isEmpty(teamId)) {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
-        try {
-            // 返回实际导入成功的行数（表头不计入）
-            int count = visitorService.importExcel(file, teamId, batchNo);
-            return HttpResult.ok(count);
-        } catch (MyException e) {
-            // 校验失败（表头不合法、行数据不合法等），将所有错误原囤直接返回给前端
-            return HttpResult.error(e.getCode(), e.getMessage());
+        Map<String, Object> result = visitorService.importExcel(file, teamId, batchNo);
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
         }
+        return HttpResult.ok(result.get("count"));
     }
 
     /**

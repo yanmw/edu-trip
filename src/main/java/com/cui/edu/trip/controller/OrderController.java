@@ -101,6 +101,9 @@ public class OrderController {
             return HttpResult.errorBadRequest();
         }
         Map result = orderService.confirmPayResult(vo.getOrderNo());
+        if (result.containsKey(SysConstants.MSG)) {
+            return HttpResult.error(result.get(SysConstants.MSG).toString());
+        }
         return HttpResult.ok(result);
     }
 
@@ -342,13 +345,21 @@ public class OrderController {
             String status = request.getParameter("status");
             if (SysConstants.TRADE_SUCCESS.equals(status)) {
                 log.info("银联支付回调内容：{}", requestString);
-                orderService.unionPayNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
+                String err = orderService.unionPayNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
                         getIntegerParameter(request, "totalAmount"), request.getParameter("mid"), request.getParameter("tid"), requestString);
+                if (err != null) {
+                    log.warn("银联支付回调处理失败：{}", err);
+                    return "FAILED";
+                }
                 return "SUCCESS";
             } else if (SysConstants.TRADE_REFUND.equals(status)) {
                 log.info("银联退款回调内容：{}", requestString);
-                orderService.unionRefundNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
+                String err = orderService.unionRefundNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
                         getIntegerParameter(request, "refundAmount"), request.getParameter("refundOrderId"), request.getParameter("refundPayTime"), requestString);
+                if (err != null) {
+                    log.warn("银联退款回调处理失败：{}", err);
+                    return "FAILED";
+                }
                 return "SUCCESS";
             }
 

@@ -1,7 +1,7 @@
 package com.cui.edu.system.service.impl;
 
 import com.cui.edu.common.HttpStatus;
-import com.cui.edu.config.exception.MyException;
+import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.SysFile;
 import com.cui.edu.system.mapper.SysFileMapper;
 import com.cui.edu.system.service.SysFileService;
@@ -23,7 +23,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -63,14 +65,17 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
     private String domain;
 
     @Override
-    public String upload(MultipartFile file) {
+    public Map<String, Object> upload(MultipartFile file) {
+        Map<String, Object> result = new HashMap<>();
         if (file == null || file.isEmpty()) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "上传文件不能为空");
+            result.put(SysConstants.MSG, "上传文件不能为空");
+            return result;
         }
 
         String formerName = StringUtils.cleanPath(file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename());
         if (formerName.contains("..")) {
-            throw new MyException(HttpStatus.SC_BAD_REQUEST, "文件名不合法");
+            result.put(SysConstants.MSG, "文件名不合法");
+            return result;
         }
 
         String suffixName = getSuffixName(formerName);
@@ -84,7 +89,8 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
 
             Path targetPath = folderPath.resolve(realName).normalize();
             if (!targetPath.startsWith(rootPath)) {
-                throw new MyException(HttpStatus.SC_BAD_REQUEST, "文件路径不合法");
+                result.put(SysConstants.MSG, "文件路径不合法");
+                return result;
             }
 
             try (InputStream inputStream = file.getInputStream()) {
@@ -103,9 +109,12 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
             String requestPath = buildAccessPath(sysFile.getId());
             sysFile.setRequestPath(requestPath);
             super.updateById(sysFile);
-            return requestPath;
+            result.put("path", requestPath);
+            return result;
         } catch (IOException e) {
-            throw new MyException(HttpStatus.SC_SERVICE_UNAVAILABLE, "文件上传失败");
+            log.error("文件上传发生IO异常", e);
+            result.put(SysConstants.MSG, "文件上传失败");
+            return result;
         }
     }
 

@@ -1,6 +1,8 @@
 package com.cui.edu.trip.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaIgnore;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -36,6 +38,7 @@ public class ActivityTagController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动标签")
+    @SaCheckPermission(value = {"active:tag:add", "active:tag:edit"}, mode = SaMode.OR)
     @Log(title = "新增/修改活动标签")
     public HttpResult save(@RequestBody ActivityTag record) {
         if (BeanUtil.isNotEmpty(record)) {
@@ -56,6 +59,7 @@ public class ActivityTagController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动标签")
+    @SaCheckPermission("active:tag:delete")
     @Log(title = "删除活动标签")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -68,6 +72,7 @@ public class ActivityTagController {
 
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "活动标签查询-分页")
+    @SaCheckPermission("active:tag:search")
     public HttpResult findPage(@RequestBody ActivityTagVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = activityTagService.findPage(vo);
@@ -79,6 +84,7 @@ public class ActivityTagController {
 
     @GetMapping(value = "/findAll")
     @ApiOperation(value = "查询全部启用的活动标签")
+    @SaCheckPermission("active:tag:search")
     public HttpResult findAll() {
         List<ActivityTag> activityTagList = activityTagService.findAll();
         return HttpResult.ok(activityTagList);

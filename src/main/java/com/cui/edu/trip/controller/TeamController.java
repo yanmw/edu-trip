@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -111,6 +112,7 @@ public class TeamController {
      */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "团队查询-分页")
+    @SaCheckPermission("order:team:search")
     public HttpResult findPage(@RequestBody TeamVO vo) {
         // 1. 校验查询条件非空
         if (BeanUtil.isNotEmpty(vo)) {

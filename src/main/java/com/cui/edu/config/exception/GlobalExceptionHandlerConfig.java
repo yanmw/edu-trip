@@ -130,7 +130,7 @@ public class GlobalExceptionHandlerConfig {
     @ExceptionHandler(NotPermissionException.class)
     public HttpResult handlerException(NotPermissionException e) {
         exceptionIntoTable(e, HttpStatus.SC_FORBIDDEN, SysConstants.FORBIDDEN);
-        return HttpResult.error(HttpStatus.SC_FORBIDDEN, "无权限：" + e.getPermission());
+        return HttpResult.error(HttpStatus.SC_FORBIDDEN, "暂无操作权限，请联系管理员");
     }
 
     /**

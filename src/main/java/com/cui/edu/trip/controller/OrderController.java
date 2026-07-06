@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -56,9 +57,9 @@ public class OrderController {
      * 1. 验证入参 vo 是否非空。
      * 2. 调用 OrderService.add 扣减预约名额、构建订单，并请求银联获取微信支付参数。
      * 3. 校验并处理 Service 返回的结果。若结果 Map 中包含错误信息 (msg)，则返回对应报错；
-     *    若无错误，返回支付参数包以供前端拉起支付。
+     * 若无错误，返回支付参数包以供前端拉起支付。
      *
-     * @param vo 下单预约参数 (AppointmentVO)
+     * @param vo      下单预约参数 (AppointmentVO)
      * @param request 当前请求上下文
      * @return 包含支付参数的 HttpResult 响应或错误信息
      * @throws Exception 银联对接或数据处理异常
@@ -116,12 +117,13 @@ public class OrderController {
      * 3. 退款请求提交成功后，本地子订单状态推进为“退款中”，等待银联异步退款回调以最终确立“已退款”状态。
      *
      * @param orderDetailId 待退款的子订单 ID
-     * @param refundReason 退款原因说明
+     * @param refundReason  退款原因说明
      * @return 退款申请提交状态的 HttpResult
      * @throws Exception 退款接口调用异常
      */
     @GetMapping(value = "/refund")
     @ApiOperation(value = "管理员退款")
+    @SaCheckPermission("order:user:refund")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
     @Log(title = "管理员退款")
     public HttpResult refund(@ApiParam(value = "子订单号") @RequestParam Long orderDetailId,
@@ -144,13 +146,14 @@ public class OrderController {
      * 2. 调用 OrderService.refundAll 将该主订单下所有支持退款的子订单发起批量退款。
      * 3. 校验退款结果，存在错误直接反馈前端，否则表示所有退款请求均已成功向银联提交。
      *
-     * @param orderNo 主订单编号
+     * @param orderNo      主订单编号
      * @param refundReason 退全款的原因
      * @return 批量退款请求提交状态的 HttpResult
      * @throws Exception 银联接口交互异常
      */
     @GetMapping(value = "/refundAll")
     @ApiOperation(value = "管理员退全款")
+    @SaCheckPermission("order:user:fullRefund")
     @AvoidRepeatRequest(intervalTime = 7, msg = "退款操作频繁，请稍后再试")
     @Log(title = "管理员退全款")
     public HttpResult refundAll(@ApiParam(value = "主订单号") @RequestParam String orderNo,
@@ -180,6 +183,7 @@ public class OrderController {
      */
     @GetMapping(value = "/refundQuery/{id}")
     @ApiOperation(value = "退款查询", response = String.class)
+    @SaCheckPermission("order:user:detail")
     public HttpResult refundQuery(@ApiParam(value = "子订单id") @PathVariable Long id) throws Exception {
         // 1. 校验 ID 非空
         if (ObjectUtil.isNotEmpty(id)) {
@@ -234,6 +238,7 @@ public class OrderController {
      */
     @PostMapping(value = "/verification")
     @ApiOperation(value = "核销", response = JSONObject.class)
+    @SaCheckPermission("order:user:verification")
     @Log(title = "订单核销")
     public HttpResult verification(@RequestBody VerificationVO vo) {
         // 1. 校验入参非空
@@ -260,7 +265,6 @@ public class OrderController {
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "根据游客openId或团队ID分页查询订单列表")
     @SaIgnore
-    @Log(title = "根据游客openId或团队ID分页查询订单")
     public HttpResult findPage(@RequestBody OrderVO vo) {
         if (ObjectUtil.isEmpty(vo)) {
             return HttpResult.errorBadRequest();
@@ -284,6 +288,7 @@ public class OrderController {
      */
     @PostMapping(value = "/findAdminPage")
     @ApiOperation(value = "管理端分页查询所有订单")
+    @SaCheckPermission("order:user:search")
     public HttpResult findAdminPage(@RequestBody OrderVO vo) {
         if (ObjectUtil.isEmpty(vo)) {
             return HttpResult.errorBadRequest();
@@ -301,7 +306,7 @@ public class OrderController {
      * <p>返回主订单基础信息、detailList 子订单集合，并补充博物馆、游客、团队、活动和场次信息。
      * 这里只查询未删除订单，避免后台误展示已逻辑删除的数据。</p>
      */
-    @GetMapping(value ="/findByOrderNo/{orderNo}")
+    @GetMapping(value = "/findByOrderNo/{orderNo}")
     @ApiOperation(value = "根据订单编号查询订单详情")
     @SaIgnore
     public HttpResult findByOrderNo(@ApiParam(value = "订单编号") @PathVariable String orderNo) {
@@ -375,7 +380,7 @@ public class OrderController {
      * 辅助方法：安全获取整型请求参数
      *
      * @param request HTTP 请求
-     * @param name 参数名
+     * @param name    参数名
      * @return 对应的整型值，如果为空则返回 null
      */
     private Integer getIntegerParameter(HttpServletRequest request, String name) {

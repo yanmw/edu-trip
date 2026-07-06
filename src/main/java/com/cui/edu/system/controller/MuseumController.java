@@ -1,6 +1,8 @@
 package com.cui.edu.system.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -39,6 +41,7 @@ public class MuseumController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改博物馆")
+    @SaCheckPermission(value = {"sys:museum:add", "sys:museum:edit"}, mode = SaMode.OR)
     @Log(title = "新增/修改博物馆")
     public HttpResult save(@RequestBody Museum record) {
         if (BeanUtil.isNotEmpty(record)) {
@@ -62,6 +65,7 @@ public class MuseumController {
 
     @PostMapping(value = "/disableFeature")
     @ApiOperation(value = "禁用博物馆")
+    @SaCheckPermission("sys:museum:edit")
     @Log(title = "禁用博物馆")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -74,6 +78,7 @@ public class MuseumController {
 
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "博物馆查询-分页")
+    @SaCheckPermission("sys:museum:search")
     public HttpResult findPage(@RequestBody MuseumVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = museumService.findPage(vo);
@@ -85,6 +90,7 @@ public class MuseumController {
 
     @GetMapping(value = "/findAll")
     @ApiOperation(value = "查询全部博物馆")
+    @SaCheckPermission("sys:museum:search")
     public HttpResult findAll() {
         QueryWrapper<Museum> ew = new QueryWrapper<>();
         ew.eq(Museum.STATUS, SysConstants.IS_TRUE);

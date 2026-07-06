@@ -1,5 +1,6 @@
 package com.cui.edu.system.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.system.service.SysLogService;
@@ -39,6 +40,7 @@ public class SysLogController {
      */
     @PostMapping("/findPage")
     @ApiOperation("分页查询系统操作日志")
+    @SaCheckPermission("sys:log:search")
     public HttpResult findPage(@RequestBody SysLogVO vo) {
         PageResult pageResult = sysLogService.findPage(vo);
         return HttpResult.ok(pageResult);
@@ -49,6 +51,7 @@ public class SysLogController {
      */
     @GetMapping("/listUserNames")
     @ApiOperation("获取用户名下拉列表")
+    @SaCheckPermission("sys:log:search")
     public HttpResult listUserNames() {
         List<String> list = sysLogService.listUserNames();
         return HttpResult.ok(list);
@@ -59,6 +62,7 @@ public class SysLogController {
      */
     @GetMapping("/listOperations")
     @ApiOperation("获取用户操作下拉列表")
+    @SaCheckPermission("sys:log:search")
     public HttpResult listOperations() {
         List<String> list = sysLogService.listOperations();
         return HttpResult.ok(list);

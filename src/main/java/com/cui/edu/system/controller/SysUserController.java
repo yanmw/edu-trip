@@ -89,6 +89,7 @@ public class SysUserController {
      */
     @PostMapping(value = "/addUser")
     @ApiOperation("添加/更新用户")
+    @SaCheckPermission("sys:user:add")
     @Log(title = "添加/更新用户")
     public HttpResult saveUser(@RequestBody SysUser user) {
         if (BeanUtil.isEmpty(user)) {
@@ -109,6 +110,7 @@ public class SysUserController {
      */
     @GetMapping(value = "/updateUserStatus")
     @ApiOperation("禁用启用用户")
+    @SaCheckPermission("sys:user:delete")
     @Log(title = "禁用/启用用户")
     public HttpResult updateUserStatus(@RequestParam Long id, @RequestParam Integer status) {
         sysUserService.updateUserStatus(id, status);
@@ -117,6 +119,7 @@ public class SysUserController {
 
     @PostMapping(value = "/findPage")
     @ApiOperation("分页查询用户")
+    @SaCheckPermission("sys:user:search")
     public HttpResult findPage(@RequestBody UserVO vo) {
         if (BeanUtil.isEmpty(vo)) {
             return HttpResult.errorBadRequest();
@@ -128,6 +131,7 @@ public class SysUserController {
 
     @GetMapping(value = "/findUserRoles/{id}")
     @ApiOperation(value = "查询用户角色")
+    @SaCheckPermission("sys:user:search")
     public HttpResult findUserRoles(@ApiParam(value = "用户id") @PathVariable Long id) {
         if (id != null) {
             List<SysUserRole> list = sysUserService.findUserRoles(id);

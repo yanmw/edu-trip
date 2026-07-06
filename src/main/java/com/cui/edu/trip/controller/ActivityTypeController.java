@@ -1,7 +1,9 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaIgnore;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -37,6 +39,7 @@ public class ActivityTypeController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动类型")
+    @SaCheckPermission(value = {"active:type:add", "active:type:edit"}, mode = SaMode.OR)
     @Log(title = "新增/修改活动类型")
     public HttpResult save(@RequestBody ActivityType record) {
         if (BeanUtil.isNotEmpty(record)) {
@@ -57,6 +60,7 @@ public class ActivityTypeController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动类型")
+    @SaCheckPermission("active:type:delete")
     @Log(title = "删除活动类型")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -69,6 +73,7 @@ public class ActivityTypeController {
 
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "活动类型查询-分页")
+    @SaCheckPermission("active:type:search")
     public HttpResult findPage(@RequestBody ActivityTypeVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = activityTypeService.findPage(vo);
@@ -80,6 +85,7 @@ public class ActivityTypeController {
 
     @GetMapping(value = "/findAll")
     @ApiOperation(value = "查询全部活动类型")
+    @SaCheckPermission("active:type:search")
     public HttpResult findAll() {
         List<ActivityType> activityTypeList = activityTypeService.findAll();
         return HttpResult.ok(activityTypeList);

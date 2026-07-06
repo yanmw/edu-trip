@@ -1,7 +1,9 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaIgnore;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
@@ -57,6 +59,7 @@ public class ActivityManageController {
      */
     @PostMapping(value = "/save")
     @ApiOperation(value = "新增/修改活动")
+    @SaCheckPermission(value = {"active:person:add", "active:person:edit"}, mode = SaMode.OR)
     @Log(title = "新增/修改活动")
     public HttpResult save(@RequestBody ActivityManage record) {
         // 1. 校验入参非空
@@ -81,6 +84,7 @@ public class ActivityManageController {
      */
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动")
+    @SaCheckPermission("active:person:delete")
     @Log(title = "删除活动")
     public HttpResult delete(@RequestBody List<Long> records) {
         // 1. 校验待删除集合非空
@@ -101,6 +105,7 @@ public class ActivityManageController {
      */
     @PostMapping(value = "/updateStatus")
     @ApiOperation(value = "禁用/启用活动")
+    @SaCheckPermission("active:person:release")
     @Log(title = "禁用/启用活动")
     public HttpResult updateStatus(@ApiParam(value = "活动状态参数") @RequestBody ActivityManageStatusVO vo) {
         // 1. 校验状态参数完整性
@@ -126,6 +131,7 @@ public class ActivityManageController {
      */
     @PostMapping(value = "/findPage")
     @ApiOperation(value = "活动查询-分页")
+    @SaCheckPermission("active:person:search")
     public HttpResult findPage(@RequestBody ActivityManageVO vo) {
         // 1. 验证条件非空
         if (BeanUtil.isNotEmpty(vo)) {

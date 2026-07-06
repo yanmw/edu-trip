@@ -1,6 +1,8 @@
 package com.cui.edu.system.controller;
 
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -48,6 +50,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/save")
     @ApiOperation(value = "保存角色")
+    @SaCheckPermission(value = {"sys:role:add", "sys:role:edit"}, mode = SaMode.OR)
     @Log(title = "新增/更新角色")
     public HttpResult save(@RequestBody SysRole record) {
         if (BeanUtil.isNotEmpty(record)) {
@@ -67,6 +70,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除角色")
+    @SaCheckPermission("sys:role:delete")
     @Log(title = "删除角色")
     public HttpResult delete(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -84,6 +88,7 @@ public class SysRoleController {
 
     @PostMapping(value = "/deleteUserRole")
     @ApiOperation(value = "清理角色下的人员及角色菜单")
+    @SaCheckPermission("sys:role:delete")
     @Log(title = "清理角色下的人员及菜单")
     public HttpResult deleteUserRole(@RequestBody List<Long> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -97,6 +102,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "角色查询-分页")
     @PostMapping(value = "/findPage")
+    @SaCheckPermission("sys:role:search")
     public HttpResult findPage(@RequestBody RoleVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             PageResult pageResult = roleService.findPage(vo);
@@ -108,6 +114,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "查询全部角色")
     @GetMapping(value = "/findAll")
+    @SaCheckPermission("sys:role:search")
     public HttpResult findAll() {
         List<SysRole> roleList = roleService.list(new QueryWrapper<>());
         return HttpResult.ok(roleList);
@@ -115,6 +122,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "查询角色菜单")
     @GetMapping(value = "/findRoleMenus/{roleId}")
+    @SaCheckPermission("sys:role:search")
     public HttpResult findRoleMenus(@ApiParam(value = "角色id") @PathVariable Long roleId) {
         if (ObjectUtil.isNotEmpty(roleId)) {
             List<SysMenu> menuList = roleService.findRoleMenus(roleId);
@@ -126,6 +134,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "保存角色-菜单")
     @PostMapping(value = "/saveRoleMenus")
+    @SaCheckPermission("sys:role:permission")
     @Log(title = "保存角色菜单权限")
     public HttpResult saveRoleMenus(@RequestBody List<SysRoleMenu> records) {
         if (ObjectUtil.isNotEmpty(records)) {
@@ -138,6 +147,7 @@ public class SysRoleController {
 
     @ApiOperation(value = "更新用户-角色")
     @GetMapping(value = "/updateUserRole")
+    @SaCheckPermission("sys:role:permission")
     @Log(title = "更新用户角色")
     public HttpResult updateUserRole(@RequestParam Long userId, @RequestParam Long roleId) {
         if (ObjectUtil.isNotEmpty(userId) && ObjectUtil.isNotEmpty(roleId)) {

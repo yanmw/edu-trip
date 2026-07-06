@@ -1,20 +1,21 @@
 package com.cui.edu.trip.entity;
 
-
-
-
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.FieldFill;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import org.springframework.format.annotation.DateTimeFormat;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
-import java.time.LocalDateTime;
-import java.io.Serializable;
+import com.cui.edu.util.serializer.IdCardDesensitizationSerializer;
+import com.cui.edu.util.serializer.MobileDesensitizationSerializer;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * <p>
@@ -26,7 +27,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@ApiModel(value="Visitor对象", description="游客表")
+@ApiModel(value = "Visitor对象", description = "游客表")
 public class Visitor implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -35,10 +36,20 @@ public class Visitor implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
+    /**
+     * 手机号，JSON 序列化时自动脱敏：保留前3位和后4位，中间替换为 ****。
+     * 例：13812345678 → 138****5678
+     */
     @ApiModelProperty(value = "手机号")
+    @JsonSerialize(using = MobileDesensitizationSerializer.class)
     private String mobile;
 
+    /**
+     * 身份证号，JSON 序列化时自动脱敏：保留前6位和后4位，中间替换为 *。
+     * 例：110101199001011234 → 110101********1234
+     */
     @ApiModelProperty(value = "身份证号")
+    @JsonSerialize(using = IdCardDesensitizationSerializer.class)
     private String idCard;
 
     @ApiModelProperty(value = "姓名")

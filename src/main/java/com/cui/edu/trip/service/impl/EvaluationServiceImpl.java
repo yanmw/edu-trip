@@ -5,23 +5,20 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.trip.entity.Evaluation;
-import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.mapper.EvaluationMapper;
-import com.cui.edu.trip.mapper.OrderMapper;
 import com.cui.edu.trip.service.EvaluationService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.common.PageResult;
 import com.cui.edu.common.PageResultUtil;
 import com.cui.edu.common.SysConstants;
+import com.cui.edu.util.DateTimeUtils;
 import com.cui.edu.vo.trip.EvaluationVO;
 import cn.hutool.core.util.ObjectUtil;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -33,9 +30,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluation> implements EvaluationService {
-
-    @Autowired
-    private OrderMapper orderMapper;
 
     /**
      * 新增评价
@@ -68,41 +62,24 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
     }
 
     /**
-     * 分页过滤查询有效评价列表
+     * 分页查询评价列表
+     * <p>
+     * 通过自定义 SQL 关联 order、order_detail、activity_manage，
+     * 将博物馆ID、活动ID、活动名称一并返回给前端。
+     * 支持按活动名称（模糊）、提交时间范围、总体评分等级过滤。
      *
-     * @param vo 包含分页页码、每页大小及可选的订单 ID 过滤条件的 EvaluationVO 对象
+     * @param vo 分页及查询条件
      * @return 分页结果 PageResult
      */
     @Override
     public PageResult findPage(EvaluationVO vo) {
         Page<Evaluation> page = new Page<>(vo.getPageNum(), vo.getPageSize());
-        QueryWrapper<Evaluation> ew = new QueryWrapper<>();
-        // 1. 精确匹配订单 ID
-        if (vo.getOrderId() != null) {
-            ew.eq(Evaluation.ORDER_ID, vo.getOrderId());
-        }
-        // 2. 仅查询未逻辑删除的评价
-        ew.eq(Evaluation.IS_DELETED, SysConstants.IS_FALSE);
-        ew.orderByDesc(Evaluation.ID);
-        page = super.page(page, ew);
-        // 3. 批量查询关联订单，将 museumId 填充到每条评价记录
-        List<Evaluation> records = page.getRecords();
-        if (!records.isEmpty()) {
-            List<Long> orderIds = records.stream()
-                    .map(Evaluation::getOrderId)
-                    .filter(id -> id != null)
-                    .distinct()
-                    .collect(Collectors.toList());
-            if (!orderIds.isEmpty()) {
-                QueryWrapper<Order> orderQw = new QueryWrapper<>();
-                orderQw.in(Order.ID, orderIds)
-                        .select(Order.ID, Order.MUSEUM_ID);
-                Map<Long, Long> orderMuseumMap = orderMapper.selectList(orderQw).stream()
-                        .collect(Collectors.toMap(Order::getId, Order::getMuseumId,
-                                (existing, replacement) -> existing));
-                records.forEach(e -> e.setMuseumId(orderMuseumMap.get(e.getOrderId())));
-            }
-        }
+        // 将前端传入的年月日转换为当天开始 / 结束的 LocalDateTime
+        LocalDateTime startDateTime = vo.getCreateTimeStart() != null
+                ? DateTimeUtils.getStartDateTime(vo.getCreateTimeStart()) : null;
+        LocalDateTime endDateTime = vo.getCreateTimeEnd() != null
+                ? DateTimeUtils.getEndDateTime(vo.getCreateTimeEnd()) : null;
+        page = baseMapper.findPageWithActivity(page, vo, startDateTime, endDateTime);
         return PageResultUtil.getPageResult(page);
     }
 

@@ -61,6 +61,14 @@ public class Evaluation implements Serializable {
     @TableField(exist = false)
     private Long museumId;
 
+    @ApiModelProperty(value = "活动ID（从关联订单详情中透传，非数据库列）")
+    @TableField(exist = false)
+    private Long activityId;
+
+    @ApiModelProperty(value = "活动名称（从关联活动表中透传，非数据库列）")
+    @TableField(exist = false)
+    private String activityName;
+
     @ApiModelProperty(value = "是否删除")
     private Integer isDeleted;
 

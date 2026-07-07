@@ -35,6 +35,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.cui.edu.trip.service.TeamService;
 import com.cui.edu.trip.service.UnionPayService;
 import com.cui.edu.trip.service.VisitorService;
+import com.cui.edu.util.DateTimeUtils;
 import com.cui.edu.util.RedisUtils;
 import com.cui.edu.util.TextCodeGenerator;
 import com.cui.edu.vo.trip.AppointmentVO;
@@ -1812,6 +1813,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (ObjectUtil.isNotEmpty(vo.getAppointmentDate())) {
             orderWrapper.eq(Order.APPOINTMENT_DATE, vo.getAppointmentDate());
+        }
+        if (ObjectUtil.isNotEmpty(vo.getOrderStartDate()) && ObjectUtil.isNotEmpty(vo.getOrderEndDate())) {
+            orderWrapper.between(Order.CREATE_TIME,
+                    DateTimeUtils.getStartDateTime(vo.getOrderStartDate()),
+                    DateTimeUtils.getEndDateTime(vo.getOrderEndDate()));
         }
         orderWrapper.orderByDesc(Order.ID);
         return orderWrapper;

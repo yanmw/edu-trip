@@ -44,4 +44,14 @@ public class OrderVO extends BasisVO {
     @JsonFormat(pattern = "yyyy-MM-dd")
     @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate appointmentDate;
+
+    @ApiModelProperty(value = "下单开始日期（yyyy-MM-dd）")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
+    private LocalDate orderStartDate;
+
+    @ApiModelProperty(value = "下单结束日期（yyyy-MM-dd）")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    @DateTimeFormat(pattern = "yyyy-MM-dd")
+    private LocalDate orderEndDate;
 }

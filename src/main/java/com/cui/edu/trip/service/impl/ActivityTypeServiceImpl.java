@@ -135,4 +135,66 @@ public class ActivityTypeServiceImpl extends ServiceImpl<ActivityTypeMapper, Act
         ew.orderByDesc(ActivityType.ID);
         return super.list(ew);
     }
+
+    /**
+     * 新增或修改活动类型
+     * <p>
+     * 业务流程：
+     * 1. 新增时设置默认状态（启用）和删除标记（未删除）。
+     * 2. 校验 type_name + museum_id 联合唯一性（忽略已逻辑删除的记录，修改时排除自身）。
+     * 3. 通过校验后持久化数据。
+     *
+     * @param record 活动类型实体
+     * @return 校验通过返回 null；校验失败返回具体的错误提示信息
+     */
+    @Override
+    public String saveActivityType(ActivityType record) {
+        // 1. 新增时设置默认值
+        if (record.getId() == null) {
+            if (record.getStatus() == null) {
+                record.setStatus(SysConstants.IS_TRUE);
+            }
+            if (record.getIsDeleted() == null) {
+                record.setIsDeleted(SysConstants.IS_FALSE);
+            }
+        }
+        // 2. 校验 type_name + museum_id 联合唯一性
+        String uniqueError = checkUnique(record);
+        if (uniqueError != null) {
+            return uniqueError;
+        }
+        // 3. 持久化
+        super.saveOrUpdate(record);
+        return null;
+    }
+
+    /**
+     * 校验 type_name + museum_id 联合唯一性（忽略已逻辑删除的记录）
+     * <p>
+     * 业务规则：同一博物馆下，活动类型名称不允许重复。
+     * 修改场景下，需排除当前记录自身（通过 id != currentId）。
+     *
+     * @param record 待保存的活动类型实体
+     * @return 校验通过返回 null；存在重复记录返回错误提示信息
+     */
+    private String checkUnique(ActivityType record) {
+        if (StringUtils.isBlank(record.getTypeName()) || ObjectUtil.isEmpty(record.getMuseumId())) {
+            // 必填字段缺失时不做唯一性校验，交由后续业务逻辑处理
+            return null;
+        }
+        QueryWrapper<ActivityType> ew = new QueryWrapper<>();
+        ew.eq(ActivityType.TYPE_NAME, record.getTypeName());
+        ew.eq(ActivityType.MUSEUM_ID, record.getMuseumId());
+        ew.eq(ActivityType.IS_DELETED, SysConstants.IS_FALSE);
+        // 修改场景：排除当前记录自身，避免将自身判断为重复
+        if (record.getId() != null) {
+            ew.ne(ActivityType.ID, record.getId());
+        }
+        long count = super.count(ew);
+        if (count > 0) {
+            return "该博物馆下已存在同名活动类型\"" + record.getTypeName() + "\"，请修改后重试";
+        }
+        return null;
+    }
 }
+

@@ -9,7 +9,6 @@ import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.common.HttpStatus;
 import com.cui.edu.common.PageResult;
-import com.cui.edu.common.SysConstants;
 import com.cui.edu.trip.entity.ActivityType;
 import com.cui.edu.trip.service.ActivityTypeService;
 import com.cui.edu.util.Log;
@@ -43,20 +42,16 @@ public class ActivityTypeController {
     @Log(title = "新增/修改活动类型")
     public HttpResult save(@RequestBody ActivityType record) {
         if (BeanUtil.isNotEmpty(record)) {
-            if (record.getId() == null) {
-                if (record.getStatus() == null) {
-                    record.setStatus(SysConstants.IS_TRUE);
-                }
-                if (record.getIsDeleted() == null) {
-                    record.setIsDeleted(SysConstants.IS_FALSE);
-                }
+            String errorMsg = activityTypeService.saveActivityType(record);
+            if (errorMsg != null) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, errorMsg);
             }
-            activityTypeService.saveOrUpdate(record);
             return HttpResult.ok(record.getId());
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
     }
+
 
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动类型")

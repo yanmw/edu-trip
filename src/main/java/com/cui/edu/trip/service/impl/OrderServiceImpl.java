@@ -1649,7 +1649,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         // 第二步：只分页查询当前页主订单，避免一次性把用户全部订单拉出来。
-        Page<Order> page = findOrderPageByVisitorOrTeam(visitorId, vo.getTeamId(), vo.getBatchNo(), vo.getPageNum(), vo.getPageSize());
+        Page<Order> page = findOrderPageByVisitorOrTeam(visitorId, vo.getTeamId(), vo.getBatchNo(), vo.getMuseumId(), vo.getPageNum(), vo.getPageSize());
         if (page.getRecords().isEmpty()) {
             return PageResultUtil.getPageResult(page);
         }
@@ -1740,7 +1740,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param pageSize  每页数量
      * @return 分页订单
      */
-    private Page<Order> findOrderPageByVisitorOrTeam(Long visitorId, Long teamId, String batchNo, Integer pageNum, Integer pageSize) {
+    private Page<Order> findOrderPageByVisitorOrTeam(Long visitorId, Long teamId, String batchNo, Long museumId, Integer pageNum, Integer pageSize) {
         Page<Order> page = new Page<>(pageNum, pageSize);
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
         // 订单列表默认只展示未删除订单，is_deleted 为空的历史数据也按未删除处理。
@@ -1758,6 +1758,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (StrUtil.isNotBlank(batchNo)) {
             // 批次号用于区分同一团队的不同批游客，传入时只查询当前批次订单。
             orderWrapper.eq(Order.BATCH_NO, batchNo.trim());
+        }
+        if (ObjectUtil.isNotEmpty(museumId)) {
+            orderWrapper.eq(Order.MUSEUM_ID, museumId);
         }
         orderWrapper.orderByDesc(Order.ID);
         return super.page(page, orderWrapper);

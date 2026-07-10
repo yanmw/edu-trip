@@ -36,6 +36,10 @@
         <if test="vo.orderId != null">
             AND e.order_id = #{vo.orderId}
         </if>
+        <!-- 精确匹配博物馆 ID -->
+        <if test="vo.museumId != null">
+            AND o.museum_id = #{vo.museumId}
+        </if>
         <!-- 活动名称模糊查询 -->
         <if test="vo.activityName != null and vo.activityName != ''">
             AND am.activity_name LIKE CONCAT('%', #{vo.activityName}, '%')

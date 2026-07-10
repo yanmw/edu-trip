@@ -15,6 +15,7 @@ import com.cui.edu.common.SysConstants;
 import com.cui.edu.system.entity.SysUser;
 import com.cui.edu.system.entity.SysUserRole;
 import com.cui.edu.system.service.SysUserService;
+import com.cui.edu.util.AvoidRepeatRequest;
 import com.cui.edu.util.Log;
 import com.cui.edu.vo.system.LoginVO;
 import com.cui.edu.vo.system.UserVO;
@@ -49,6 +50,7 @@ public class SysUserController {
     @ApiOperation("用户登录")
     @SaIgnore
     @Log(title = "登录")
+    @AvoidRepeatRequest(intervalTime = 7, msg = "登录操作频繁，请稍后再试")
     public HttpResult doLogin(@RequestBody LoginVO loginVO) {
         // 校验
         if (BeanUtil.isEmpty(loginVO)) {

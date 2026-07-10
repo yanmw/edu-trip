@@ -16,6 +16,9 @@ public class EvaluationVO extends BasisVO {
     @ApiModelProperty(value = "订单ID")
     private Long orderId;
 
+    @ApiModelProperty(value = "博物馆ID")
+    private Long museumId;
+
     @ApiModelProperty(value = "活动名称（模糊查询）")
     private String activityName;
 

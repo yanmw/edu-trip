@@ -91,6 +91,10 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
             if (record.getIsDeleted() == null) {
                 record.setIsDeleted(SysConstants.IS_FALSE);
             }
+            // 是否特价默认为否
+            if (record.getIsSpecialPrice() == null) {
+                record.setIsSpecialPrice(SysConstants.IS_FALSE);
+            }
         } else {
             // 4.2 校验只读字段：活动一旦建立并发布，其单价、博物馆、起止时间等不允许再修改，以保证历史订单的可追溯性
             ActivityManage oldActivityManage = super.getById(record.getId());
@@ -210,10 +214,11 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
      * @param participationType 可选：参与形式 (个人/团队)
      * @param activityTypeId    可选：活动类型 ID
      * @param appointmentDate   可选：预约日期，格式 yyyy-MM-dd；传入后场次返回 bookedCount 字段
+     * @param isSpecialPrice    可选：是否特价；不传或传 0 返回非特价活动，传 1 返回特价活动
      * @return 匹配的有效活动列表，且带排期场次详情
      */
     @Override
-    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId, LocalDate appointmentDate) {
+    public List<ActivityManage> findByMuseumId(Long museumId, Integer participationType, Long activityTypeId, LocalDate appointmentDate, Integer isSpecialPrice) {
         QueryWrapper<ActivityManage> ew = new QueryWrapper<>();
         ew.eq(ActivityManage.MUSEUM_ID, museumId);
         if (participationType != null) {
@@ -221,6 +226,12 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         }
         if (activityTypeId != null) {
             ew.eq(ActivityManage.ACTIVITY_TYPE_ID, activityTypeId);
+        }
+        // 是否特价过滤：传 1 返回特价，其他情况（不传或传 0）返回非特价
+        if (SysConstants.IS_TRUE.equals(isSpecialPrice)) {
+            ew.eq(ActivityManage.IS_SPECIAL_PRICE, SysConstants.IS_TRUE);
+        } else {
+            ew.eq(ActivityManage.IS_SPECIAL_PRICE, SysConstants.IS_FALSE);
         }
         // 仅查询处于"已启用上架 (1)"且"未逻辑删除 (0)"状态的活动
         ew.eq(ActivityManage.STATUS, SysConstants.IS_TRUE);

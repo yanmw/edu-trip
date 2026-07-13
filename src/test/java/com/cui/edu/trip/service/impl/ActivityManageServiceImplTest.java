@@ -74,7 +74,7 @@ class ActivityManageServiceImplTest {
         when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
         ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
 
-        activityManageService.findByMuseumId(1L, ActivityManage.PARTICIPATION_TYPE_TEAM, null, null);
+        activityManageService.findByMuseumId(1L, ActivityManage.PARTICIPATION_TYPE_TEAM, null, null, null);
 
         ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(activityManageMapper).selectList(queryCaptor.capture());
@@ -87,7 +87,7 @@ class ActivityManageServiceImplTest {
         when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
         ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
 
-        activityManageService.findByMuseumId(1L, null, 2L, null);
+        activityManageService.findByMuseumId(1L, null, 2L, null, null);
 
         ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(activityManageMapper).selectList(queryCaptor.capture());
@@ -100,7 +100,7 @@ class ActivityManageServiceImplTest {
         when(activityManageMapper.selectList(any())).thenReturn(Collections.emptyList());
         ActivityManageServiceImpl activityManageService = activityManageService(activityManageMapper);
 
-        activityManageService.findByMuseumId(1L, null, null, null);
+        activityManageService.findByMuseumId(1L, null, null, null, null);
 
         ArgumentCaptor<Wrapper<ActivityManage>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(activityManageMapper).selectList(queryCaptor.capture());

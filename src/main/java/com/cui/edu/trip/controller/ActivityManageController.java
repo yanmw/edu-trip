@@ -170,11 +170,13 @@ public class ActivityManageController {
      * <p>
      * 支持多重可选过滤条件，如：参与形式 (个人/团队)、活动分类 ID 等。主要用于小程序首页活动列表渲染。
      * 若传入 appointmentDate，则每个场次会返回该日期已预约人数（bookedCount）。
+     * isSpecialPrice 不传或传 0 时返回非特价活动，传 1 时返回特价活动。
      *
      * @param museumId          博物馆 ID
      * @param participationType 可选：参与形式，1：团队，2：个人
      * @param activityTypeId    可选：活动类型主键 ID
      * @param appointmentDate   可选：预约日期，格式 yyyy-MM-dd
+     * @param isSpecialPrice    可选：是否特价，1：返回特价活动；不传或传 0：返回非特价活动
      * @return 匹配的活动列表数据
      */
     @GetMapping(value = "/findByMuseumId")
@@ -187,14 +189,17 @@ public class ActivityManageController {
                                      @RequestParam(required = false) Long activityTypeId,
                                      @ApiParam(value = "预约日期，格式 yyyy-MM-dd，传入后场次返回已预约人数bookedCount")
                                      @RequestParam(required = false)
-                                     @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate appointmentDate) {
+                                     @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate appointmentDate,
+                                     @ApiParam(value = "是否特价：1返回特价活动；不传或0返回非特价活动")
+                                     @RequestParam(required = false) Integer isSpecialPrice) {
         // 1. 校验博物馆 ID 非空
         if (ObjectUtil.isNotEmpty(museumId)) {
             // 2. 查询对应的活动列表
-            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType, activityTypeId, appointmentDate);
+            List<ActivityManage> activityManageList = activityManageService.findByMuseumId(museumId, participationType, activityTypeId, appointmentDate, isSpecialPrice);
             return HttpResult.ok(activityManageList);
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");
         }
     }
 }
+

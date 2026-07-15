@@ -29,4 +29,7 @@ public class ActivityManageVO extends BasisVO {
 
     @ApiModelProperty(value = "活动标签ID，按单个标签ID过滤")
     private Long tagId;
+
+    @ApiModelProperty(value = "是否特价：1是 0否")
+    private Integer isSpecialPrice;
 }

@@ -70,6 +70,9 @@ public class Visitor implements Serializable {
     @ApiModelProperty(value = "性别（1：男；0：女；2：未知）")
     private Integer gender;
 
+    @ApiModelProperty(value = "年龄（根据身份证出生日期计算）")
+    private Integer age;
+
     @ApiModelProperty(value = "团队ID")
     private Long teamId;
 
@@ -85,6 +88,8 @@ public class Visitor implements Serializable {
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 
+    @ApiModelProperty(value = "备注")
+    private String remark;
 
     public static final String ID = "id";
 
@@ -104,6 +109,8 @@ public class Visitor implements Serializable {
 
     public static final String GENDER = "gender";
 
+    public static final String AGE = "age";
+
     public static final String TEAM_ID = "team_id";
 
     public static final String BATCH_NO = "batch_no";
@@ -112,6 +119,8 @@ public class Visitor implements Serializable {
 
     public static final String CREATE_TIME = "create_time";
 
+    public static final String REMARK = "remark";
+    
     public static final Integer GENDER_MALE = 1;
 
     public static final Integer GENDER_FEMALE = 0;

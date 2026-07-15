@@ -520,6 +520,46 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, Visitor> impl
             // 15 位身份证第 15 位为性别顺序码
             setGender(record, idCard.charAt(14));
         }
+        // 根据身份证出生日期解析年龄
+        fillAgeFromIdCard(record, idCard);
+    }
+
+    /**
+     * 从身份证号中解析出生日期并计算当前年龄，写入 record.age。
+     * <p>
+     * 支持 15 位（18 位身份证：
+     * <ul>
+     *   <li>18 位：第 7–14 位为出生日期（yyyyMMdd）</li>
+     *   <li>15 位：第 7–12 位为出生日期（yyMMdd），年份补全为 19xx</li>
+     * </ul>
+     * 解析失败时（格式异常）静默处理，不设置年龄。
+     * </p>
+     */
+    private void fillAgeFromIdCard(Visitor record, String idCard) {
+        try {
+            String birthDateStr;
+            if (idCard.length() == 18) {
+                // 18 位身份证：第 7–14 位为 yyyyMMdd 格式出生日期
+                birthDateStr = idCard.substring(6, 14);
+            } else if (idCard.length() == 15) {
+                // 15 位身份证：第 7–12 位为 yyMMdd，年份统一补全为 19xx
+                birthDateStr = "19" + idCard.substring(6, 12);
+            } else {
+                return;
+            }
+            LocalDate birthDate = LocalDate.parse(birthDateStr, STRICT_DATE_FORMATTER);
+            LocalDate today = LocalDate.now();
+            // 根据出生日期计算周岁年龄：若今年生日尚未到则减 1
+            int age = today.getYear() - birthDate.getYear();
+            if (today.getMonthValue() < birthDate.getMonthValue()
+                    || (today.getMonthValue() == birthDate.getMonthValue()
+                        && today.getDayOfMonth() < birthDate.getDayOfMonth())) {
+                age--;
+            }
+            record.setAge(age);
+        } catch (Exception e) {
+            // 出生日期格式异常时静默不设置年龄，不影响主流程
+        }
     }
 
     /**

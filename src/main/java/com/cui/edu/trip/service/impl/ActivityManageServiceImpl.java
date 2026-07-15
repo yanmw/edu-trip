@@ -280,7 +280,11 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         if (vo.getTagId() != null) {
             ew.apply("FIND_IN_SET({0}, tag_ids) > 0", vo.getTagId());
         }
-        // 8. 过滤逻辑删除记录，并按 ID 降序排列
+        // 8. 精确过滤：是否特价
+        if (vo.getIsSpecialPrice() != null) {
+            ew.eq(ActivityManage.IS_SPECIAL_PRICE, vo.getIsSpecialPrice());
+        }
+        // 9. 过滤逻辑删除记录，并按 ID 降序排列
         ew.eq(ActivityManage.IS_DELETED, SysConstants.IS_FALSE);
         ew.orderByDesc(ActivityManage.ID);
         return ew;

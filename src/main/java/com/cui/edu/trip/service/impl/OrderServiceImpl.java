@@ -290,7 +290,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         order.setBatchNo(StrUtil.isBlank(vo.getBatchNo()) ? null : vo.getBatchNo().trim());
         order.setOrderType(ObjectUtil.isNotEmpty(vo.getTeamId()) ? 2 : 1);
         order.setIsUsed(SysConstants.IS_FALSE);
-        order.setIsDeleted(SysConstants.IS_FALSE);
         order.setAppointmentDate(vo.getAppointmentDate());
         order.setMuseumId(vo.getMuseumId());
         order.setOrderQuantity(orderQuantity);
@@ -392,7 +391,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             String tradeNo = queryResult.getString("targetOrderId");
             // 银联主动查询确认支付成功时，直接复用支付回调逻辑，弥补银联回调未送达的情况。
             String notifyError = unionPayNotify(orderNo, tradeNo, queryResult.getInteger("totalAmount"),
-                    queryResult.getString("mid"), queryResult.getString("tid"), JSON.toJSONString(queryResult));
+                    queryResult.getString("mid"), queryResult.getString("tid"), queryResult.getString("payTime"), JSON.toJSONString(queryResult));
             if (notifyError != null) {
                 return buildPayQueryResult(order, false, unionPayStatus, notifyError);
             }
@@ -443,11 +442,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param totalAmount   银联回调或查询返回的支付金额
      * @param mid           银联商户号
      * @param tid           银联终端号
+     * @param payTime       银联支付成功时间，回调字段 payTime
      * @param requestString 银联原始回调报文或补偿查询结果 JSON，当前服务层仅承接入参
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString) {
+    public String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String payTime, String requestString) {
         Order order = null;
         try {
             // 第一步：根据系统订单号查询主订单。银联回调里的merOrderId就是本系统订单号。
@@ -472,8 +472,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 return null;
             }
 
-            // 第四步：更新主订单为支付成功，并补充银联订单号；退款字段为空时初始化为0，便于后续退款累计。
-            markOrderPaySuccess(order, tradeNo);
+            // 第四步：更新主订单为支付成功，并补充银联订单号和支付成功时间；退款字段为空时初始化为0，便于后续退款累计。
+            markOrderPaySuccess(order, tradeNo, payTime);
 
             // 第五步：更新子订单状态。只有初始状态的子订单才能被支付回调推进为支付成功。
             List<Long> affectedDetailIds = markOrderDetailsPaySuccess(order, beforeOrderStatus);
@@ -515,14 +515,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 将主订单标记为支付成功并补充银联订单号。
+     * 将主订单标记为支付成功并补充银联订单号、支付成功时间。
      *
      * @param order   本地订单
      * @param tradeNo 银联订单号
+     * @param payTime 银联支付成功时间
      */
-    private void markOrderPaySuccess(Order order, String tradeNo) {
+    private void markOrderPaySuccess(Order order, String tradeNo, String payTime) {
         order.setOrderStatus(Order.OrderStatusEnum.SUCCESS.getValue());
         order.setUnionpayOrderNo(tradeNo);
+        order.setPaySuccessTime(parseUnionPayPayTime(payTime));
         if (ObjectUtil.isEmpty(order.getRefundAmount())) {
             order.setRefundAmount(0);
         }
@@ -530,6 +532,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             order.setRefundQuantity(0);
         }
         super.updateById(order);
+    }
+
+    /**
+     * 解析银联支付成功时间。
+     *
+     * <p>银联支付回调字段 payTime 常见格式是 yyyy-MM-dd HH:mm:ss，也兼容 yyyyMMddHHmmss；
+     * 若字段为空或格式异常，不阻断支付成功状态落库，只记录告警并保持时间为空。</p>
+     *
+     * @param payTime 银联支付成功时间原始值
+     * @return 支付成功时间，无法解析时返回 null
+     */
+    private LocalDateTime parseUnionPayPayTime(String payTime) {
+        if (StrUtil.isBlank(payTime)) {
+            return null;
+        }
+        try {
+            return DateTimeUtils.string2LocalDateTime(payTime.trim());
+        } catch (DateTimeParseException ignored) {
+            try {
+                return DateTimeUtils.string2LocalDateTimeOther(payTime.trim());
+            } catch (DateTimeParseException e) {
+                log.warn("银联支付成功时间解析失败，payTime={}", payTime);
+                return null;
+            }
+        }
     }
 
     /**
@@ -1047,7 +1074,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         String tradeNo = queryResult.getString("targetOrderId");
         // 银联确认支付成功时复用支付回调逻辑，保持订单状态变更口径一致。
         unionPayNotify(orderNo, tradeNo, queryResult.getInteger("totalAmount"),
-                queryResult.getString("mid"), queryResult.getString("tid"), JSON.toJSONString(queryResult));
+                queryResult.getString("mid"), queryResult.getString("tid"), queryResult.getString("payTime"), JSON.toJSONString(queryResult));
     }
 
     /**
@@ -1075,7 +1102,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult("子订单不存在");
         }
         Order order = super.getById(orderDetail.getOrderId());
-        if (ObjectUtil.isEmpty(order) || SysConstants.IS_TRUE.equals(order.getIsDeleted())) {
+        if (ObjectUtil.isEmpty(order)) {
             saveRefundApplyOrderNoFailLog(orderDetail.getOrderNo(), requestContent, "主订单不存在");
             return msgResult("主订单不存在");
         }
@@ -1408,7 +1435,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult("该子订单未发起退款");
         }
         Order order = super.getById(orderDetail.getOrderId());
-        if (ObjectUtil.isEmpty(order) || SysConstants.IS_TRUE.equals(order.getIsDeleted())) {
+        if (ObjectUtil.isEmpty(order)) {
             return msgResult("主订单不存在");
         }
         Museum museum = museumService.getById(orderDetail.getMuseumId());
@@ -1606,7 +1633,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult(checkMsg);
         }
 
-        // 第三步：查询订单。这里只查未删除订单，避免已删除订单被继续核销。
+        // 第三步：查询订单。订单表已不再使用逻辑删除字段，按订单号直接定位主订单。
         Order order = getOrderByOrderNo(vo.getOrderNo());
 
         // 第四步：校验订单归属、订单状态、预约日期和是否已使用。
@@ -1666,7 +1693,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     /**
      * 管理端分页查询所有订单。
      *
-     * <p>管理端不限制游客 openId 或团队 ID，默认查询所有未删除订单；
+     * <p>管理端不限制游客 openId 或团队 ID，默认查询所有订单；
      * 如果前端传入筛选条件，则按订单号、博物馆、订单状态等条件进一步过滤。
      * 查出当前页主订单后，复用游客/团队列表的子订单和关联表补充逻辑。</p>
      *
@@ -1695,11 +1722,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 同时补充主订单和子订单涉及的博物馆、游客、团队、活动、场次对象。</p>
      *
      * @param orderNo 订单编号
-     * @return 订单详情；订单不存在或已删除时返回 null
+     * @return 订单详情；订单不存在时返回 null
      */
     @Override
     public Order findByOrderNo(String orderNo) {
-        // 第一步：订单编号是前后端业务流转字段，按订单编号查询未删除主订单。
+        // 第一步：订单编号是前后端业务流转字段，按订单编号查询主订单。
         Order order = getOrderByOrderNo(orderNo);
         if (ObjectUtil.isEmpty(order)) {
             return null;
@@ -1731,7 +1758,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 根据游客 ID 或团队 ID 分页查询未删除订单。
+     * 根据游客 ID 或团队 ID 分页查询订单。
      *
      * @param visitorId 游客 ID
      * @param teamId    团队 ID
@@ -1743,8 +1770,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private Page<Order> findOrderPageByVisitorOrTeam(Long visitorId, Long teamId, String batchNo, Long museumId, Integer pageNum, Integer pageSize) {
         Page<Order> page = new Page<>(pageNum, pageSize);
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
-        // 订单列表默认只展示未删除订单，is_deleted 为空的历史数据也按未删除处理。
-        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         orderWrapper.and(wrapper -> {
             if (ObjectUtil.isNotEmpty(visitorId) && ObjectUtil.isNotEmpty(teamId)) {
                 // openId 和 teamId 同时传入时，返回个人订单与团队订单的并集。
@@ -1788,8 +1813,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      */
     private QueryWrapper<Order> buildAdminOrderPageWrapper(OrderVO vo) {
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
-        // 后台列表默认只展示未删除订单，兼容 is_deleted 为空的历史数据。
-        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         if (StrUtil.isNotBlank(vo.getOrderNo())) {
             orderWrapper.like(Order.ORDER_NO, vo.getOrderNo().trim());
         }
@@ -2259,7 +2282,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 根据系统订单号查询未删除主订单。
+     * 根据系统订单号查询主订单。
      *
      * @param orderNo 系统订单号
      * @return 主订单，不存在时返回 null
@@ -2270,7 +2293,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
         orderWrapper.eq(Order.ORDER_NO, orderNo);
-        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         orderWrapper.last("limit 1");
         return super.getOne(orderWrapper);
     }
@@ -3170,7 +3192,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         QueryWrapper<Order> orderWrapper = new QueryWrapper<>();
         orderWrapper.eq(column, id);
         orderWrapper.eq(Order.ORDER_STATUS, Order.OrderStatusEnum.PAYING.getValue());
-        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         return super.count(orderWrapper) > 0;
     }
 
@@ -3187,7 +3208,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         // 同一团队可能多批次出行，未支付订单限制只约束当前批次。
         orderWrapper.eq(Order.BATCH_NO, batchNo.trim());
         orderWrapper.eq(Order.ORDER_STATUS, Order.OrderStatusEnum.PAYING.getValue());
-        orderWrapper.and(wrapper -> wrapper.eq(Order.IS_DELETED, SysConstants.IS_FALSE).or().isNull(Order.IS_DELETED));
         return super.count(orderWrapper) > 0;
     }
 

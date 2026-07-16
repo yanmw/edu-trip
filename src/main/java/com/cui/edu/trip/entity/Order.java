@@ -84,9 +84,6 @@ public class Order implements Serializable {
     @ApiModelProperty(value = "游客ID")
     private Long visitorId;
 
-    @ApiModelProperty(value = "是否删除")
-    private Integer isDeleted;
-
     @ApiModelProperty(value = "创建时间")
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -101,6 +98,11 @@ public class Order implements Serializable {
 
     @ApiModelProperty(value = "预约日期")
     private LocalDate appointmentDate;
+
+    @ApiModelProperty(value = "支付成功时间")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime paySuccessTime;
 
     @ApiModelProperty(value = "博物馆信息")
     @TableField(exist = false)
@@ -155,13 +157,13 @@ public class Order implements Serializable {
 
     public static final String VISITOR_ID = "visitor_id";
 
-    public static final String IS_DELETED = "is_deleted";
-
     public static final String CREATE_TIME = "create_time";
 
     public static final String UPDATE_TIME = "update_time";
 
     public static final String APPOINTMENT_DATE = "appointment_date";
+
+    public static final String PAY_SUCCESS_TIME = "pay_success_time";
 
     /**
      * 订单状态枚举

@@ -333,6 +333,7 @@ public class OrderController {
      * <p>targetOrderId：银联订单号，保存到主订单 unionpay_order_no。</p>
      * <p>refundOrderId：退款订单号，只在退款回调中存在，对应子订单 refund_id。</p>
      * <p>refundAmount：本次退款金额，单位分。</p>
+     * <p>payTime：银联支付成功时间，保存到主订单 pay_success_time。</p>
      * <p>refundPayTime：银联退款完成时间。</p>
      */
     @PostMapping(value = "/unionPayNotify")
@@ -351,7 +352,8 @@ public class OrderController {
             if (SysConstants.TRADE_SUCCESS.equals(status)) {
                 log.info("银联支付回调内容：{}", requestString);
                 String err = orderService.unionPayNotify(request.getParameter("merOrderId"), request.getParameter("targetOrderId"),
-                        getIntegerParameter(request, "totalAmount"), request.getParameter("mid"), request.getParameter("tid"), requestString);
+                        getIntegerParameter(request, "totalAmount"), request.getParameter("mid"), request.getParameter("tid"),
+                        request.getParameter("payTime"), requestString);
                 if (err != null) {
                     log.warn("银联支付回调处理失败：{}", err);
                     return "FAILED";

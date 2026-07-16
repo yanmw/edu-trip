@@ -52,9 +52,10 @@ public interface OrderService extends IService<Order> {
      * @param totalAmount 银联回调或查询返回的订单金额
      * @param mid 银联商户号
      * @param tid 银联终端号
+     * @param payTime 银联支付成功时间，对应银联回调 payTime
      * @param requestString 银联原始回调内容或银联查询结果JSON，用于日志追踪
      */
-    String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String requestString);
+    String unionPayNotify(String orderNo, String tradeNo, Integer totalAmount, String mid, String tid, String payTime, String requestString);
 
     /**
      * 处理银联退款成功回调。

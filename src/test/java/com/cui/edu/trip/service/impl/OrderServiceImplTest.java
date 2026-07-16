@@ -21,6 +21,7 @@ import com.cui.edu.trip.service.OrderDetailService;
 import com.cui.edu.trip.service.OrderLogService;
 import com.cui.edu.trip.service.TeamService;
 import com.cui.edu.trip.service.VisitorService;
+import com.cui.edu.util.RedisUtils;
 import com.cui.edu.util.TextCodeGenerator;
 import com.cui.edu.vo.trip.AppointmentVO;
 import com.cui.edu.vo.trip.OrderVO;
@@ -28,9 +29,11 @@ import com.cui.edu.vo.trip.VerificationVO;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -71,7 +74,7 @@ class OrderServiceImplTest {
         ArgumentCaptor<Wrapper<Order>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(orderMapper).selectPage(any(Page.class), queryCaptor.capture());
         String sqlSegment = queryCaptor.getValue().getSqlSegment();
-        assertTrue(sqlSegment.contains("is_deleted"));
+        assertFalse(sqlSegment.contains("is_deleted"));
         assertFalse(sqlSegment.contains("visitor_id"));
         assertFalse(sqlSegment.contains("team_id"));
     }
@@ -195,7 +198,53 @@ class OrderServiceImplTest {
         verify(orderMapper).selectOne(queryCaptor.capture());
         String sqlSegment = queryCaptor.getValue().getSqlSegment();
         assertTrue(sqlSegment.contains("order_no"));
-        assertTrue(sqlSegment.contains("is_deleted"));
+        assertFalse(sqlSegment.contains("is_deleted"));
+    }
+
+    @Test
+    void unionPayNotifyRecordsPaySuccessTimeFromPayTime() {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        Order order = new Order();
+        order.setId(7L);
+        order.setOrderNo("202607160001");
+        order.setMuseumId(3L);
+        order.setPayAmount(300);
+        order.setOrderStatus(Order.OrderStatusEnum.PAYING.getValue());
+        when(orderMapper.selectOne(any())).thenReturn(order);
+
+        Museum museum = new Museum();
+        museum.setMid("898102100002649");
+        museum.setTid("KF994K4C");
+        MuseumService museumService = mock(MuseumService.class);
+        when(museumService.getById(3L)).thenReturn(museum);
+
+        OrderDetail orderDetail = new OrderDetail();
+        orderDetail.setId(11L);
+        orderDetail.setOrderNo("202607160001");
+        orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.INIT.getValue());
+        OrderDetailService orderDetailService = mock(OrderDetailService.class);
+        when(orderDetailService.list(any())).thenReturn(Collections.singletonList(orderDetail));
+        OrderLogService orderLogService = mock(OrderLogService.class);
+
+        OrderServiceImpl orderService = orderService(orderMapper);
+        ReflectionTestUtils.setField(orderService, "museumService", museumService);
+        ReflectionTestUtils.setField(orderService, "orderDetailService", orderDetailService);
+        RedisUtils redisUtils = new RedisUtils();
+        ReflectionTestUtils.setField(redisUtils, "redisTemplate", mock(RedisTemplate.class));
+        ReflectionTestUtils.setField(orderService, "redisUtils", redisUtils);
+        ReflectionTestUtils.setField(orderService, "orderLogService", orderLogService);
+
+        String err = orderService.unionPayNotify("202607160001", "450000020220260716000001", 300,
+                "898102100002649", "KF994K4C", "2026-07-16 15:30:45", "{}");
+
+        assertEquals(null, err);
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).updateById(orderCaptor.capture());
+        Order updatedOrder = orderCaptor.getValue();
+        assertEquals(Order.OrderStatusEnum.SUCCESS.getValue(), updatedOrder.getOrderStatus());
+        assertEquals(LocalDateTime.of(2026, 7, 16, 15, 30, 45), updatedOrder.getPaySuccessTime());
     }
 
     @Test

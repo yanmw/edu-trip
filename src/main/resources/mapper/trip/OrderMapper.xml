@@ -2,4 +2,41 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.cui.edu.trip.mapper.OrderMapper">
 
+    <select id="findNumAndAmount" resultType="java.util.Map">
+        select date_format(o.create_time, '%Y-%m') create_time,
+               am.activity_name,
+               am.price,
+               count(1) num,
+               sum(od.order_amount) amount
+        from `order` o
+                 inner join order_detail od on
+            o.id = od.order_id
+                 inner join activity_manage am on
+            od.activity_id = am.id
+        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+          and o.museum_id = #{museumId}
+          and o.is_used = 1
+          and od.order_status = 10
+          and o.order_status  in (10,-2)
+        group by date_format(o.create_time, '%Y-%m'),
+                 am.activity_name,
+                 am.price
+        order by am.activity_name
+    </select>
+    <select id="findVerificationTradeNo" resultType="java.lang.String">
+        select o.unionpay_order_no trade_no
+        from `order` o
+        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+          and o.museum_id = #{museumId}
+          and o.order_status in (10,-2)
+    </select>
+    <select id="findCrossMonthAppointmentTradeNo" resultType="java.lang.String">
+        select o.unionpay_order_no trade_no
+        from `order` o
+        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+          and o.museum_id = #{museumId}
+          and o.order_status in (10, -2, -11)
+          and o.appointment_date is not null
+          and date_format(o.appointment_date, '%Y-%m') > date_format(#{currentMonthEnd}, '%Y-%m')
+    </select>
 </mapper>

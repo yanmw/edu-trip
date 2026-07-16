@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -35,4 +36,11 @@ public interface OrderDetailMapper extends BaseMapper<OrderDetail> {
                             @Param("orderStatuses") List<Integer> orderStatuses,
                             @Param("detailStatuses") List<Integer> detailStatuses);
 
+    List<String> findVerificationRefundTradeNo(@Param("museumCode") String museumCode, @Param("currentMonthStart") String currentMonthStart, @Param("currentMonthEnd") String currentMonthEnd);
+
+    List<String> findAcrossMonthsUsedRefund(@Param("lastMonthStart") String lastMonthStart, @Param("lastMonthEnd") String lastMonthEnd, @Param("currentMonthStart") String currentMonthStart, @Param("currentMonthEnd") String currentMonthEnd, @Param("museumCode") String museumCode);
+
+    List<String> findAcrossMultipleMonthsUsedRefund(@Param("currentMonthStart") String currentMonthStart, @Param("currentMonthEnd") String currentMonthEnd, @Param("museumCode") String museumCode);
+
+    List<Map> findListByOrderId(@Param("orderId") Long orderId);
 }

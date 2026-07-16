@@ -41,7 +41,7 @@ public class Visitor implements Serializable {
      * 例：13812345678 → 138****5678
      */
     @ApiModelProperty(value = "手机号")
-    @JsonSerialize(using = MobileDesensitizationSerializer.class)
+//    @JsonSerialize(using = MobileDesensitizationSerializer.class)
     private String mobile;
 
     /**
@@ -49,7 +49,7 @@ public class Visitor implements Serializable {
      * 例：110101199001011234 → 110101********1234
      */
     @ApiModelProperty(value = "身份证号")
-    @JsonSerialize(using = IdCardDesensitizationSerializer.class)
+//    @JsonSerialize(using = IdCardDesensitizationSerializer.class)
     private String idCard;
 
     @ApiModelProperty(value = "姓名")

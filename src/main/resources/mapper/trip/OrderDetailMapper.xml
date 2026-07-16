@@ -28,5 +28,44 @@
           </foreach>
         </if>
     </select>
+    <select id="findVerificationRefundTradeNo" resultType="java.lang.String">
+        select o.unionpay_order_no trade_no
+        from `order` o
+                 inner join order_detail od on o.id = od.order_id
+        where od.refund_time between #{currentMonthStart} and #{currentMonthEnd}
+          and od.order_status = -2
+          and o.order_status in (-2,-10)
+          and o.museum_id = #{museumId}
+    </select>
+    <select id="findAcrossMonthsUsedRefund" resultType="java.lang.String">
+        select o.unionpay_order_no trade_no
+        from `order` o inner join order_detail od on o.id = od.order_id
+        where od.create_time between #{lastMonthStart} and #{lastMonthEnd}
+          and od.refund_time between #{currentMonthStart} and #{currentMonthEnd}
+          and od.museum_id = #{museumId}
+        group by o.unionpay_order_no
+    </select>
+    <select id="findAcrossMultipleMonthsUsedRefund" resultType="java.lang.String">
+        select
+            o.unionpay_order_no trade_no
+        from
+            order_detail od inner join `order` o on od.order_id = o.id
+        where
+            od.refund_time between #{currentMonthStart} and #{currentMonthEnd}
+          and date_format(od.create_time, '%Y-%m') != date_format(od.refund_time, '%Y-%m')
+        and od.order_status = -2
+        and od.museum_id = #{museumId}
+        group by o.unionpay_order_no
+    </select>
+    <select id="findListByOrderId" resultType="java.util.Map">
+        select
+            od.*,
+            p.name
+        from
+            order_detail od
+                inner join product p on
+                od.product_id = p.id
+        where od.order_id = #{orderId}
+    </select>
 
 </mapper>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="银联异常对账数据看板">
+    <title>银联异常对账</title>
+    <link rel="stylesheet" href="./reconciliation.css">
+</head>
+<body>
+<div class="app-shell">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">账</span>
+            <div>
+                <p class="eyebrow">FINANCE CONTROL</p>
+                <h1>银联异常对账</h1>
+            </div>
+        </div>
+        <div class="topbar-meta">
+            <span class="status-dot"></span>
+            <span>数据口径：有效核销 / 银联消费与退款</span>
+        </div>
+    </header>
+
+    <main>
+        <section class="query-panel" aria-labelledby="query-title">
+            <div class="section-heading compact">
+                <div>
+                    <p class="eyebrow">RECONCILIATION RANGE</p>
+                    <h2 id="query-title">选择核对范围</h2>
+                </div>
+                <p class="section-help">开始和结束日期均包含当天，可跨月查询</p>
+            </div>
+            <form id="query-form" class="query-form">
+                <label class="field museum-field">
+                    <span>博物馆</span>
+                    <select id="museum-select" name="museumId" aria-label="选择博物馆" disabled>
+                        <option value="">正在加载博物馆…</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>开始日期</span>
+                    <input id="start-date" name="startDate" type="date" required>
+                </label>
+                <span class="date-separator" aria-hidden="true">至</span>
+                <label class="field">
+                    <span>结束日期</span>
+                    <input id="end-date" name="endDate" type="date" required>
+                </label>
+                <button id="query-button" class="button primary" type="submit">
+                    <span class="button-icon" aria-hidden="true">↗</span>
+                    开始核对
+                </button>
+            </form>
+            <div id="query-message" class="inline-message hidden" role="alert"></div>
+        </section>
+
+        <section id="initial-state" class="welcome-state">
+            <div class="welcome-illustration" aria-hidden="true">
+                <div class="ledger-sheet">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+                <div class="check-seal">✓</div>
+            </div>
+            <p class="eyebrow">READY TO RECONCILE</p>
+            <h2>从一段清晰的账期开始</h2>
+            <p>查询后将在这里展示总账闭环、数据覆盖情况以及每一类异常订单。</p>
+            <button id="demo-button" class="button ghost" type="button">查看界面示例</button>
+        </section>
+
+        <section id="loading-state" class="loading-state hidden" aria-live="polite">
+            <div class="loader"></div>
+            <h2>正在归集对账数据</h2>
+            <p>正在比对系统核销、银联支付和多笔退款，请稍候…</p>
+        </section>
+
+        <div id="result-content" class="result-content hidden">
+            <section class="result-header">
+                <div>
+                    <div class="period-line">
+                        <span id="result-period">—</span>
+                        <span id="museum-badge" class="soft-badge">博物馆 —</span>
+                    </div>
+                    <h2>对账结果总览</h2>
+                    <p id="result-summary">—</p>
+                </div>
+                <div class="header-actions">
+                    <button id="export-button" class="button secondary" type="button">导出 JSON</button>
+                    <button id="refresh-button" class="button ghost compact-button" type="button">重新查询</button>
+                </div>
+            </section>
+
+            <section id="balance-banner" class="balance-banner" aria-live="polite">
+                <div class="balance-symbol" aria-hidden="true">✓</div>
+                <div class="balance-copy">
+                    <p class="eyebrow">BALANCE STATUS</p>
+                    <h3 id="balance-title">账目已完全平衡</h3>
+                    <p id="balance-description">系统有效核销金额与调整后银联净额一致。</p>
+                </div>
+                <div class="balance-difference">
+                    <span>最终差额</span>
+                    <strong id="balance-difference">¥0.00</strong>
+                </div>
+            </section>
+
+            <section class="metric-grid" aria-label="对账关键指标">
+                <article class="metric-card navy">
+                    <div class="metric-topline"><span>系统有效核销</span><span class="metric-index">01</span></div>
+                    <strong id="system-amount">¥0.00</strong>
+                    <p><span id="system-quantity">0</span> 个有效子订单</p>
+                </article>
+                <article class="metric-card blue">
+                    <div class="metric-topline"><span>银联消费</span><span class="metric-index">02</span></div>
+                    <strong id="union-pay-amount">¥0.00</strong>
+                    <p><span id="union-pay-count">0</span> 笔消费流水</p>
+                </article>
+                <article class="metric-card amber">
+                    <div class="metric-topline"><span>银联退款</span><span class="metric-index">03</span></div>
+                    <strong id="union-refund-amount">¥0.00</strong>
+                    <p><span id="union-refund-count">0</span> 笔退款流水</p>
+                </article>
+                <article class="metric-card green">
+                    <div class="metric-topline"><span>异常调整</span><span class="metric-index">04</span></div>
+                    <strong id="adjustment-amount">¥0.00</strong>
+                    <p>用于解释跨期与单边差异</p>
+                </article>
+            </section>
+
+            <section class="content-card formula-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">BALANCE EQUATION</p>
+                        <h2>金额闭环</h2>
+                    </div>
+                    <span id="formula-status" class="status-pill success">已闭环</span>
+                </div>
+                <div class="formula-flow">
+                    <div class="formula-item">
+                        <span>银联消费</span>
+                        <strong id="formula-pay">¥0.00</strong>
+                    </div>
+                    <span class="operator">−</span>
+                    <div class="formula-item">
+                        <span>银联退款</span>
+                        <strong id="formula-refund">¥0.00</strong>
+                    </div>
+                    <span class="operator">+</span>
+                    <div class="formula-item adjustment">
+                        <span>异常调整</span>
+                        <strong id="formula-adjustment">¥0.00</strong>
+                    </div>
+                    <span class="operator equals">=</span>
+                    <div class="formula-item total">
+                        <span>系统有效核销</span>
+                        <strong id="formula-system">¥0.00</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card coverage-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">SOURCE CONTROL</p>
+                        <h2>原始数据覆盖</h2>
+                    </div>
+                    <span id="coverage-status" class="status-pill success">全部处理</span>
+                </div>
+                <div id="coverage-grid" class="coverage-grid"></div>
+            </section>
+
+            <section class="content-card billing-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">VERIFICATION BILLING</p>
+                        <h2>有效核销账单</h2>
+                        <p class="section-help">只统计核对区间内仍有效的核销子订单，已退款数据不计入。</p>
+                    </div>
+                    <div class="billing-total">
+                        <span><strong id="billing-total-quantity">0</strong> 个名额</span>
+                        <span><strong id="billing-total-amount">¥0.00</strong> 核销金额</span>
+                    </div>
+                </div>
+                <div id="billing-table-wrap" class="billing-table-wrap">
+                    <table class="billing-table">
+                        <thead>
+                        <tr>
+                            <th>核销月份</th>
+                            <th>活动名称</th>
+                            <th>活动ID</th>
+                            <th>固定单价</th>
+                            <th>核销数量</th>
+                            <th>核销金额</th>
+                        </tr>
+                        </thead>
+                        <tbody id="billing-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="billing-empty" class="billing-empty hidden">当前核对区间没有有效核销数据</div>
+            </section>
+
+            <section class="anomaly-section">
+                <div class="section-heading anomaly-heading">
+                    <div>
+                        <p class="eyebrow">EXCEPTION LEDGER</p>
+                        <h2>异常分类明细</h2>
+                        <p id="anomaly-summary" class="section-help">—</p>
+                    </div>
+                    <label class="toggle-control">
+                        <input id="show-empty-toggle" type="checkbox">
+                        <span class="toggle-track"><span></span></span>
+                        显示空分类
+                    </label>
+                </div>
+                <nav id="group-tabs" class="group-tabs" aria-label="异常大类"></nav>
+                <div id="anomaly-groups"></div>
+                <div id="no-anomaly-state" class="no-anomaly hidden">
+                    <span aria-hidden="true">✓</span>
+                    <h3>当前区间没有异常订单</h3>
+                    <p>系统与银联数据在所选核对范围内完全一致。</p>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer>
+        <span>异常对账数据中心</span>
+        <span>金额单位：人民币元（后端原始单位为分）</span>
+    </footer>
+</div>
+
+<div id="detail-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-panel">
+        <header class="modal-header">
+            <div>
+                <p id="modal-code" class="eyebrow">—</p>
+                <h2 id="modal-title">异常订单详情</h2>
+            </div>
+            <button class="icon-button" type="button" data-close-modal aria-label="关闭详情">×</button>
+        </header>
+        <div id="modal-body" class="modal-body"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script src="./reconciliation.js"></script>
+</body>
+</html>

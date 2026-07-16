@@ -67,9 +67,6 @@ public class OrderDetail implements Serializable {
     @ApiModelProperty(value = "订单状态 -1：放弃支付；0：初始状态 10：支付成功；-2：退款；-11：退款中")
     private Integer orderStatus;
 
-    @ApiModelProperty(value = "是否删除")
-    private Integer isDeleted;
-
     @ApiModelProperty(value = "创建时间")
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -120,8 +117,6 @@ public class OrderDetail implements Serializable {
     public static final String REFUND_REASON = "refund_reason";
 
     public static final String ORDER_STATUS = "order_status";
-
-    public static final String IS_DELETED = "is_deleted";
 
     public static final String CREATE_TIME = "create_time";
 

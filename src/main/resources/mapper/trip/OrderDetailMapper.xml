@@ -11,8 +11,6 @@
           AND od.activity_id = #{activityId}
           AND od.activity_schedule_id = #{activityScheduleId}
           AND o.appointment_date = #{appointmentDate}
-          AND (od.is_deleted = 0 OR od.is_deleted IS NULL)
-          AND (o.is_deleted = 0 OR o.is_deleted IS NULL)
         <!-- 只统计仍占用名额的主订单状态，例如待支付、支付成功、退款中。 -->
         <if test="orderStatuses != null and orderStatuses.size() > 0">
           AND o.order_status IN
@@ -40,7 +38,7 @@
     <select id="findAcrossMonthsUsedRefund" resultType="java.lang.String">
         select o.unionpay_order_no trade_no
         from `order` o inner join order_detail od on o.id = od.order_id
-        where od.create_time between #{lastMonthStart} and #{lastMonthEnd}
+        where od.pay_success_time between #{lastMonthStart} and #{lastMonthEnd}
           and od.refund_time between #{currentMonthStart} and #{currentMonthEnd}
           and od.museum_id = #{museumId}
         group by o.unionpay_order_no
@@ -52,7 +50,7 @@
             order_detail od inner join `order` o on od.order_id = o.id
         where
             od.refund_time between #{currentMonthStart} and #{currentMonthEnd}
-          and date_format(od.create_time, '%Y-%m') != date_format(od.refund_time, '%Y-%m')
+          and date_format(od.pay_success_time, '%Y-%m') != date_format(od.refund_time, '%Y-%m')
         and od.order_status = -2
         and od.museum_id = #{museumId}
         group by o.unionpay_order_no

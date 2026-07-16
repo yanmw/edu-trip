@@ -334,7 +334,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderDetail.setOrderStatus(OrderDetail.OrderDetailStatusEnum.INIT.getValue());
         orderDetail.setMuseumId(order.getMuseumId());
         orderDetail.setOrderAmount(activityManage.getPrice());
-        orderDetail.setIsDeleted(SysConstants.IS_FALSE);
         return orderDetail;
     }
 
@@ -1098,7 +1097,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult("子订单ID不能为空");
         }
         OrderDetail orderDetail = orderDetailService.getById(orderDetailId);
-        if (ObjectUtil.isEmpty(orderDetail) || SysConstants.IS_TRUE.equals(orderDetail.getIsDeleted())) {
+        if (ObjectUtil.isEmpty(orderDetail)) {
             return msgResult("子订单不存在");
         }
         Order order = super.getById(orderDetail.getOrderId());
@@ -1428,7 +1427,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult("子订单ID不能为空");
         }
         OrderDetail orderDetail = orderDetailService.getById(id);
-        if (ObjectUtil.isEmpty(orderDetail) || SysConstants.IS_TRUE.equals(orderDetail.getIsDeleted())) {
+        if (ObjectUtil.isEmpty(orderDetail)) {
             return msgResult("子订单不存在");
         }
         if (ObjectUtil.isEmpty(orderDetail.getRefundId())) {
@@ -2121,7 +2120,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 查询指定订单号集合下的未删除子订单。
+     * 查询指定订单号集合下的全部子订单。
      *
      * @param orderNoList 当前页订单号集合
      * @return 子订单列表
@@ -2129,7 +2128,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private List<OrderDetail> getOrderDetailsByOrderNoList(List<String> orderNoList) {
         QueryWrapper<OrderDetail> detailWrapper = new QueryWrapper<>();
         detailWrapper.in(OrderDetail.ORDER_NO, orderNoList);
-        detailWrapper.and(wrapper -> wrapper.eq(OrderDetail.IS_DELETED, SysConstants.IS_FALSE).or().isNull(OrderDetail.IS_DELETED));
         detailWrapper.orderByAsc(OrderDetail.ID);
         return orderDetailService.list(detailWrapper);
     }
@@ -2298,7 +2296,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 查询主订单下未删除的全部子订单。
+     * 查询主订单下的全部子订单。
      *
      * @param orderNo 系统订单号
      * @return 子订单列表
@@ -2306,13 +2304,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private List<OrderDetail> getOrderDetails(String orderNo) {
         QueryWrapper<OrderDetail> detailWrapper = new QueryWrapper<>();
         detailWrapper.eq(OrderDetail.ORDER_NO, orderNo);
-        detailWrapper.and(wrapper -> wrapper.eq(OrderDetail.IS_DELETED, SysConstants.IS_FALSE).or().isNull(OrderDetail.IS_DELETED));
         detailWrapper.orderByAsc(OrderDetail.ID);
         return orderDetailService.list(detailWrapper);
     }
 
     /**
-     * 按系统订单号和退款订单号查询未删除子订单。
+     * 按系统订单号和退款订单号查询子订单。
      *
      * @param orderNo       系统订单号
      * @param refundOrderId 退款订单号
@@ -2322,7 +2319,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         QueryWrapper<OrderDetail> detailWrapper = new QueryWrapper<>();
         detailWrapper.eq(OrderDetail.ORDER_NO, orderNo);
         detailWrapper.eq(OrderDetail.REFUND_ID, refundOrderId);
-        detailWrapper.and(wrapper -> wrapper.eq(OrderDetail.IS_DELETED, SysConstants.IS_FALSE).or().isNull(OrderDetail.IS_DELETED));
         detailWrapper.orderByAsc(OrderDetail.ID);
         return orderDetailService.list(detailWrapper);
     }
@@ -2336,7 +2332,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * @param order 主订单
      */
     private void refreshOrderRefundInfo(Order order) {
-        // 第一步：查询主订单下全部未删除子订单，作为退款汇总的数据来源。
+        // 第一步：查询主订单下全部子订单，作为退款汇总的数据来源。
         List<OrderDetail> orderDetailList = getOrderDetails(order.getOrderNo());
         int refundAmount = 0;
         int refundQuantity = 0;

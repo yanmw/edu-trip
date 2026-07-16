@@ -2,6 +2,7 @@ package com.cui.edu.system.controller;
 
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.dev33.satoken.annotation.SaMode;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -90,7 +91,8 @@ public class MuseumController {
 
     @GetMapping(value = "/findAll")
     @ApiOperation(value = "查询全部博物馆")
-    @SaCheckPermission("sys:museum:search")
+//    @SaCheckPermission("sys:museum:search")
+    @SaIgnore
     public HttpResult findAll() {
         QueryWrapper<Museum> ew = new QueryWrapper<>();
         ew.eq(Museum.STATUS, SysConstants.IS_TRUE);

@@ -26,9 +26,9 @@
             am.activity_name
         FROM evaluation e
         <!-- 关联主订单，取 museum_id -->
-        LEFT JOIN `order` o ON o.id = e.order_id AND (o.is_deleted = 0 OR o.is_deleted IS NULL)
+        LEFT JOIN `order` o ON o.id = e.order_id
         <!-- 关联订单详情，取 activity_id（一个订单对应一条详情，取第一条） -->
-        LEFT JOIN order_detail od ON od.order_id = e.order_id AND (od.is_deleted = 0 OR od.is_deleted IS NULL)
+        LEFT JOIN order_detail od ON od.order_id = e.order_id
         <!-- 关联活动，取活动名称 -->
         LEFT JOIN activity_manage am ON am.id = od.activity_id AND (am.is_deleted = 0 OR am.is_deleted IS NULL)
         WHERE e.is_deleted = 0

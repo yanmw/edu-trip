@@ -1,6 +1,7 @@
 package com.cui.edu.trip.controller;
 
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.alibaba.excel.EasyExcel;
@@ -8,9 +9,12 @@ import com.cui.edu.common.HttpResult;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.trip.entity.unionpay.UnionPayDataV2;
 import com.cui.edu.trip.entity.unionpay.UnionPayData;
+import com.cui.edu.trip.service.ReconciliationService;
 import com.cui.edu.trip.service.UnionPayDataService;
 import com.cui.edu.util.easyexcel.listener.UnionPayDataListener;
 import com.cui.edu.util.easyexcel.listener.UnionPayDataV2Listener;
+import com.cui.edu.vo.reconciliation.ReconciliationAbnormalQueryVO;
+import com.cui.edu.vo.reconciliation.ReconciliationAbnormalResult;
 import com.cui.edu.vo.reconciliation.ReconciliationVO;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -43,6 +47,9 @@ public class UnionPayDataController {
 
     @Autowired
     private MuseumService museumService;
+
+    @Autowired
+    private ReconciliationService reconciliationService;
 
     @PostMapping("/uploadUnionPay")
     @ApiOperation(value = "银联excel导入（自动兼容格式一和格式二）")
@@ -84,7 +91,9 @@ public class UnionPayDataController {
     }
 
     @PostMapping("/billing")
-    @ApiOperation(value = "各个博物馆的账单")
+    @ApiOperation(value = "各个博物馆的账单（已废弃）",
+            notes = "请使用/reconciliation/abnormal响应中的billing字段")
+    @Deprecated
     public HttpResult billing(@RequestBody ReconciliationVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             List<Map> result = unionPayDataService.billing(vo);
@@ -95,7 +104,8 @@ public class UnionPayDataController {
     }
 
     @PostMapping(value = "/abnormalData")
-    @ApiOperation(value = "异常数据")
+    @ApiOperation(value = "异常数据（已废弃）", notes = "请使用/reconciliation/abnormal")
+    @Deprecated
     public HttpResult abnormalData(@RequestBody ReconciliationVO vo) {
         if (BeanUtil.isNotEmpty(vo)) {
             Map<String, Collection> map = unionPayDataService.abnormalData(vo);
@@ -105,8 +115,23 @@ public class UnionPayDataController {
         }
     }
 
+    @PostMapping(value = "/reconciliation/abnormal")
+    @ApiOperation(value = "新异常对账（按分类返回详细数据）")
+    @SaIgnore
+    public HttpResult reconciliationAbnormal(@RequestBody ReconciliationAbnormalQueryVO vo) {
+        // 新接口接收博物馆及核对起止日期，不分页；日期先后关系由对账服务统一校验。
+        if (vo == null || ObjectUtil.isEmpty(vo.getMuseumId())
+                || vo.getStartDate() == null || vo.getEndDate() == null) {
+            return HttpResult.errorBadRequest();
+        }
+        // 返回固定异常分类、分类明细、原始数据覆盖情况以及最终金额闭环结果。
+        ReconciliationAbnormalResult result = reconciliationService.findAbnormalData(vo);
+        return HttpResult.ok(result);
+    }
+
     @GetMapping(value = "/detail/{tradeNo}/{museumId}")
-    @ApiOperation(value = "订单详情")
+    @ApiOperation(value = "订单详情（已废弃）", notes = "新异常接口已直接返回主订单、全部子订单及银联流水")
+    @Deprecated
     public HttpResult detail(@ApiParam(value = "银联订单号") @PathVariable String tradeNo, @ApiParam(value = "博物馆id") @PathVariable String museumId) {
         if (ObjectUtil.isNotEmpty(tradeNo)) {
             Map map = unionPayDataService.detail(tradeNo, museumId);

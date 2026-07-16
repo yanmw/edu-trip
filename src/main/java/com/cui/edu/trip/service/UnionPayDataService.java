@@ -18,9 +18,12 @@ import java.util.Map;
  */
 public interface UnionPayDataService extends IService<UnionPayData> {
 
+    @Deprecated
     List<Map> billing(ReconciliationVO vo);
 
+    @Deprecated
     Map<String, Collection> abnormalData(ReconciliationVO vo);
 
+    @Deprecated
     Map detail(String tradeNo, String museumId);
 }

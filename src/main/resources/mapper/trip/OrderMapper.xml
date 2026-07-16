@@ -3,7 +3,7 @@
 <mapper namespace="com.cui.edu.trip.mapper.OrderMapper">
 
     <select id="findNumAndAmount" resultType="java.util.Map">
-        select date_format(o.create_time, '%Y-%m') create_time,
+        select date_format(o.verification_time, '%Y-%m') verificationTime,
                am.activity_name,
                am.price,
                count(1) num,
@@ -13,12 +13,11 @@
             o.id = od.order_id
                  inner join activity_manage am on
             od.activity_id = am.id
-        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+        where o.verification_time between #{currentMonthStart} and #{currentMonthEnd}
           and o.museum_id = #{museumId}
           and o.is_used = 1
           and od.order_status = 10
-          and o.order_status  in (10,-2)
-        group by date_format(o.create_time, '%Y-%m'),
+        group by date_format(o.verification_time, '%Y-%m'),
                  am.activity_name,
                  am.price
         order by am.activity_name
@@ -26,14 +25,14 @@
     <select id="findVerificationTradeNo" resultType="java.lang.String">
         select o.unionpay_order_no trade_no
         from `order` o
-        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+        where o.pay_success_time between #{currentMonthStart} and #{currentMonthEnd}
           and o.museum_id = #{museumId}
           and o.order_status in (10,-2)
     </select>
     <select id="findCrossMonthAppointmentTradeNo" resultType="java.lang.String">
         select o.unionpay_order_no trade_no
         from `order` o
-        where o.create_time between #{currentMonthStart} and #{currentMonthEnd}
+        where o.pay_success_time between #{currentMonthStart} and #{currentMonthEnd}
           and o.museum_id = #{museumId}
           and o.order_status in (10, -2, -11)
           and o.appointment_date is not null

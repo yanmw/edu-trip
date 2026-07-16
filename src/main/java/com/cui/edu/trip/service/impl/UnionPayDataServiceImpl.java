@@ -47,6 +47,7 @@ public class UnionPayDataServiceImpl extends ServiceImpl<UnionPayDataMapper, Uni
     private MuseumService museumService;
 
     @Override
+    @Deprecated
     public List<Map> billing(ReconciliationVO vo) {
         // 核对月的当月月初日期
         String currentMonthStart = vo.getStartDate();
@@ -58,6 +59,7 @@ public class UnionPayDataServiceImpl extends ServiceImpl<UnionPayDataMapper, Uni
 
 
     @Override
+    @Deprecated
     public Map<String, Collection> abnormalData(ReconciliationVO vo) {
         Map<String, Collection> result = new HashMap(16);
         // 核对月的上月月初日期
@@ -211,6 +213,7 @@ public class UnionPayDataServiceImpl extends ServiceImpl<UnionPayDataMapper, Uni
     }
 
     @Override
+    @Deprecated
     public Map detail(String tradeNo, String museumId) {
         Museum museum = museumService.getById(museumId);
         Map result = new HashMap(4);

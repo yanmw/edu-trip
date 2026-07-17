@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.hutool.core.util.ObjectUtil;
 import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.entity.ActivitySchedule;
+import com.cui.edu.trip.entity.OrderDetail;
 import com.cui.edu.trip.mapper.ActivityManageMapper;
 import com.cui.edu.trip.mapper.OrderDetailMapper;
 import com.cui.edu.trip.service.ActivityManageService;
@@ -165,26 +166,40 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
      * 批量逻辑删除活动
      * <p>
      * 业务流程：
-     * 1. 批量更新活动表的 is_deleted 标志为 1。
-     * 2. 活动被逻辑删除后，其名下绑定的所有活动场次 (ActivitySchedule) 均需同步置为禁用状态，防止被错误购买。
+     * 1. 逐一检查每个活动在订单详情表中是否存在关联订单，存在则拒绝删除并返回提示信息。
+     * 2. 校验全部通过后，批量更新活动表的 is_deleted 标志为 1。
+     * 3. 活动被逻辑删除后，其名下绑定的所有活动场次 (ActivitySchedule) 均需同步置为禁用状态，防止被错误购买。
      *
      * @param ids 待逻辑删除的活动 ID 列表
+     * @return 校验通过返回 null；存在关联订单时返回具体的错误提示信息
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void logicDelete(List<Long> ids) {
+    public String logicDelete(List<Long> ids) {
+        // 1. 校验每个活动是否已有关联订单，有则拒绝删除
+        for (Long id : ids) {
+            QueryWrapper<OrderDetail> orderDetailQuery = new QueryWrapper<>();
+            orderDetailQuery.eq(OrderDetail.ACTIVITY_ID, id);
+            long orderCount = orderDetailMapper.selectCount(orderDetailQuery);
+            if (orderCount > 0) {
+                ActivityManage activity = super.getById(id);
+                String activityName = activity != null ? activity.getActivityName() : ("ID:" + id);
+                return "活动\"" + activityName + "\"已有订单关联，无法删除";
+            }
+        }
         List<ActivityManage> activityManageList = new ArrayList<>();
-        // 1. 循环构建待逻辑删除的活动载荷
+        // 2. 循环构建待逻辑删除的活动载荷
         for (Long id : ids) {
             ActivityManage activityManage = new ActivityManage();
             activityManage.setId(id);
             activityManage.setIsDeleted(SysConstants.IS_TRUE);
             activityManageList.add(activityManage);
         }
-        // 2. 执行批量删除更新
+        // 3. 执行批量删除更新
         super.updateBatchById(activityManageList);
-        // 3. 同步禁用该批活动关联的所有场次排期
+        // 4. 同步禁用该批活动关联的所有场次排期
         disableSchedulesByActivityIds(ids);
+        return null;
     }
 
     /**

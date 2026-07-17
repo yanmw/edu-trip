@@ -35,8 +35,10 @@ public interface ActivityManageService extends IService<ActivityManage> {
 
     /**
      * 批量逻辑删除活动，并同步清理活动场次。
+     * 若某活动已有关联订单（order_detail 中存在记录），则拒绝删除，返回错误提示信息。
+     * 全部校验通过后返回 null。
      */
-    void logicDelete(List<Long> ids);
+    String logicDelete(List<Long> ids);
 
     /**
      * 根据ID查询活动详情，包含活动场次。

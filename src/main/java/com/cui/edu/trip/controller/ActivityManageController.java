@@ -78,9 +78,11 @@ public class ActivityManageController {
 
     /**
      * 批量逻辑删除活动
+     * <p>
+     * 若某活动已有关联订单，则拒绝删除并返回具体提示信息。
      *
      * @param records 待删除的活动主键 ID 集合
-     * @return 成功状态或参数错误提示的 HttpResult 响应
+     * @return 成功状态或参数错误/业务校验失败提示的 HttpResult 响应
      */
     @PostMapping(value = "/delete")
     @ApiOperation(value = "删除活动")
@@ -89,8 +91,11 @@ public class ActivityManageController {
     public HttpResult delete(@RequestBody List<Long> records) {
         // 1. 校验待删除集合非空
         if (ObjectUtil.isNotEmpty(records)) {
-            // 2. 调用逻辑删除服务
-            activityManageService.logicDelete(records);
+            // 2. 调用逻辑删除服务（内含关联订单校验）
+            String errorMsg = activityManageService.logicDelete(records);
+            if (errorMsg != null) {
+                return HttpResult.error(HttpStatus.SC_BAD_REQUEST, errorMsg);
+            }
             return HttpResult.ok();
         } else {
             return HttpResult.error(HttpStatus.SC_BAD_REQUEST, "参数有误");

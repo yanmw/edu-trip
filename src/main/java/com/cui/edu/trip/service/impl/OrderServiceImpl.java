@@ -41,11 +41,14 @@ import com.cui.edu.util.TextCodeGenerator;
 import com.cui.edu.vo.trip.AppointmentVO;
 import com.cui.edu.vo.trip.OrderVO;
 import com.cui.edu.vo.trip.VerificationVO;
+import cn.dev33.satoken.stp.StpUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
@@ -2976,8 +2979,74 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     /**
      * 保存订单日志。
      */
+    /**
+     * 保存订单日志，入库前统一填充操作人、客户端 IP 和链路追踪 ID。
+     *
+     * <p>操作人通过 Sa-Token 从当前线程获取；IP 和 traceId 从 Spring RequestContext 中读取，
+     * 若当前线程无 HTTP 上下文（如定时任务、异步补偿），则对应字段留空。</p>
+     *
+     * @param orderLog 待保存的日志对象
+     */
     private void saveOrderLog(OrderLog orderLog) {
+        // 填充操作人（Sa-Token 登录态，未登录场景如回调则为空）。
+        try {
+            if (StpUtil.isLogin()) {
+                Object loginId = StpUtil.getLoginId();
+                if (loginId != null) {
+                    orderLog.setOperatorName(loginId.toString());
+                }
+                Object userId = StpUtil.getSession().get("userId");
+                if (userId != null) {
+                    if (userId instanceof Long) {
+                        orderLog.setOperatorId((Long) userId);
+                    } else {
+                        orderLog.setOperatorId(Long.valueOf(String.valueOf(userId)));
+                    }
+                } else if (loginId != null && StrUtil.isNumeric(loginId.toString())) {
+                    orderLog.setOperatorId(Long.valueOf(loginId.toString()));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        // 填充客户端 IP 和链路追踪 ID（从当前 HTTP 请求上下文获取）。
+        try {
+            ServletRequestAttributes attributes =
+                    (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                orderLog.setClientIp(resolveClientIp(request));
+                String traceId = request.getHeader("X-Trace-Id");
+                if (StrUtil.isNotBlank(traceId)) {
+                    orderLog.setTraceId(traceId);
+                }
+            }
+        } catch (Exception ignored) {
+        }
         orderLogService.saveLog(orderLog);
+    }
+
+    /**
+     * 从 HTTP 请求中解析客户端真实 IP（支持反向代理透传）。
+     *
+     * @param request 当前 HTTP 请求
+     * @return 客户端 IP
+     */
+    private String resolveClientIp(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (isBlankIp(ip)) ip = request.getHeader("Proxy-Client-IP");
+        if (isBlankIp(ip)) ip = request.getHeader("WL-Proxy-Client-IP");
+        if (isBlankIp(ip)) ip = request.getHeader("HTTP_CLIENT_IP");
+        if (isBlankIp(ip)) ip = request.getHeader("HTTP_X_FORWARDED_FOR");
+        if (isBlankIp(ip)) ip = request.getRemoteAddr();
+        // X-Forwarded-For 可能包含多个 IP，取第一个（最接近客户端）。
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip;
+    }
+
+    private boolean isBlankIp(String ip) {
+        return ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip);
     }
 
     /**

@@ -83,7 +83,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        // 种子订单包含：核对期支付、核对期核销、预约日在核对期、核对期发生退款的订单。
+        // 种子订单包含核对期事件及仍未解决的历史预约，避免逾期未核销订单在后续查询中消失。
         List<Order> orders = findSeedOrders(museum.getId(), period, refundOrderIds);
         // 银联只按交易时间查询核对区间内的消费和退款流水。
         List<UnionPayData> currentUnionRows = findCurrentUnionRows(museum, period);
@@ -125,6 +125,9 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         // unionpay_order_no与merchant_order_no相同，以该值组装一份订单级对账台账。
         LinkedHashMap<String, Ledger> ledgers = buildLedgers(orders, allOrderDetails, currentUnionRows,
                 historicalUnionRows, activityMap);
+        // 先登记四类原始数据的唯一ID，后续每次真正进入计算时再逐条打标。
+        SourceTracker sourceTracker = initializeSourceTracker(ledgers.values(), currentRefundDetails,
+                currentUnionRows, period);
         // 参考号重复属于银联导入质量问题，不影响多笔合法退款按交易号汇总。
         Set<String> duplicatedReferences = findDuplicatedReferences(currentUnionRows);
 
@@ -136,7 +139,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         for (Ledger ledger : ledgers.values()) {
             // 先将当前订单的系统核销、系统退款、银联支付和银联退款计算为统一指标。
-            LedgerMetrics metrics = calculateMetrics(ledger, period);
+            LedgerMetrics metrics = calculateMetrics(ledger, period, sourceTracker);
             // 同一批已加载数据同步生成活动维度的有效核销账单，替代旧/billing查询。
             accumulateBilling(billingMap, ledger, period);
             // 同一订单允许命中多个异常标签，例如“区间前支付、核对期核销”同时伴随退款异常。
@@ -161,7 +164,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         // 完成分类数量、数据覆盖统计以及最终加减闭环校验。
         finishBilling(result, billingMap);
         finishCategories(result);
-        finishSourceControl(result, currentRefundDetails, currentUnionRows, unclassifiedCount);
+        finishSourceControl(result, sourceTracker, unclassifiedCount);
         finishBalance(result);
         return result;
     }
@@ -194,7 +197,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private List<Order> findSeedOrders(Long museumId, QueryPeriod period, Set<Long> refundOrderIds) {
         QueryWrapper<Order> wrapper = new QueryWrapper<>();
         wrapper.eq(Order.MUSEUM_ID, museumId);
-        // 四类时间事件用OR连接，保证跨月支付、预约、核销、退款都能进入候选集。
+        // 核对期事件用OR连接，同时纳入预约早于核对开始日且当前仍未核销的历史订单。
         wrapper.and(condition -> {
             condition.ge(Order.PAY_SUCCESS_TIME, period.startDateTime)
                     .lt(Order.PAY_SUCCESS_TIME, period.endDateTimeExclusive)
@@ -207,6 +210,22 @@ public class ReconciliationServiceImpl implements ReconciliationService {
             if (!refundOrderIds.isEmpty()) {
                 condition.or().in(Order.ID, refundOrderIds);
             }
+            condition.or(overdue -> overdue
+                    .lt(Order.APPOINTMENT_DATE, period.startDate)
+                    .and(usage -> usage.isNull(Order.IS_USED).or().ne(Order.IS_USED, 1))
+                    .in(Order.ORDER_STATUS, Arrays.asList(
+                            Order.OrderStatusEnum.SUCCESS.getValue(),
+                            Order.OrderStatusEnum.PARTIAL_REFUND.getValue())));
+            // 创建时间只用于发现支付时间缺失的脏数据，绝不用于判定订单属于哪个支付期间。
+            condition.or(missingPayTime -> missingPayTime
+                    .isNull(Order.PAY_SUCCESS_TIME)
+                    .ge(Order.CREATE_TIME, period.startDateTime)
+                    .lt(Order.CREATE_TIME, period.endDateTimeExclusive)
+                    .in(Order.ORDER_STATUS, Arrays.asList(
+                            Order.OrderStatusEnum.SUCCESS.getValue(),
+                            Order.OrderStatusEnum.PARTIAL_REFUND.getValue(),
+                            Order.OrderStatusEnum.ALL_REFUND.getValue(),
+                            Order.OrderStatusEnum.REFUNDING.getValue())));
         });
         return orderMapper.selectList(wrapper);
     }
@@ -368,16 +387,52 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .collect(Collectors.toSet());
     }
 
-    private LedgerMetrics calculateMetrics(Ledger ledger, QueryPeriod period) {
+    private SourceTracker initializeSourceTracker(Collection<Ledger> ledgers,
+                                                  List<OrderDetail> currentRefundDetails,
+                                                  List<UnionPayData> currentUnionRows,
+                                                  QueryPeriod period) {
+        SourceTracker tracker = new SourceTracker();
+        // 已核销原始明细以“核销标记和核销时间命中区间”为准，主订单状态是否合法由异常规则判断。
+        for (Ledger ledger : ledgers) {
+            Set<Long> rawVerifiedOrderIds = ledger.orders.stream()
+                    .filter(order -> Integer.valueOf(1).equals(order.getIsUsed()))
+                    .filter(order -> inPeriod(order.getVerificationTime(), period))
+                    .map(Order::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+            ledger.details.stream()
+                    .filter(detail -> rawVerifiedOrderIds.contains(detail.getOrderId()))
+                    .filter(detail -> OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue()
+                            .equals(detail.getOrderStatus()))
+                    .forEach(tracker::registerSystemVerification);
+        }
+        // 退款原始明细直接使用核对期退款查询结果，避免计算结果反向冒充原始数量。
+        currentRefundDetails.forEach(tracker::registerSystemRefund);
+        // 银联消费与退款分别登记；未识别类型由导入质量异常负责，不混入消费或退款覆盖率。
+        currentUnionRows.stream().filter(row -> TYPE_PAY.equals(row.getType()))
+                .forEach(tracker::registerUnionPay);
+        currentUnionRows.stream().filter(row -> TYPE_REFUND.equals(row.getType()))
+                .forEach(tracker::registerUnionRefund);
+        return tracker;
+    }
+
+    private LedgerMetrics calculateMetrics(Ledger ledger, QueryPeriod period, SourceTracker sourceTracker) {
         LedgerMetrics metrics = new LedgerMetrics();
         // 正常应只有一个系统订单；若重复，取ID最小的订单作为详情快照，同时另报重复异常。
         metrics.primaryOrder = ledger.orders.isEmpty() ? null : ledger.orders.get(0);
-        // 有效核销必须同时满足：主订单已核销，且verification_time位于核对区间。
-        Set<Long> verifiedOrderIds = ledger.orders.stream()
+        // 原始核销记录用于覆盖率打标；有效核销还必须满足主订单状态合法。
+        Set<Long> rawVerifiedOrderIds = ledger.orders.stream()
                 .filter(order -> Integer.valueOf(1).equals(order.getIsUsed()))
                 .filter(order -> inPeriod(order.getVerificationTime(), period))
                 .map(Order::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> verifiedOrderIds = ledger.orders.stream()
+                .filter(order -> Integer.valueOf(1).equals(order.getIsUsed()))
+                .filter(order -> inPeriod(order.getVerificationTime(), period))
+                .filter(order -> isValidVerifiedOrderStatus(order.getOrderStatus()))
+                .map(Order::getId).filter(Objects::nonNull).collect(Collectors.toSet());
         for (OrderDetail detail : ledger.details) {
+            if (rawVerifiedOrderIds.contains(detail.getOrderId())
+                    && OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue().equals(detail.getOrderStatus())) {
+                sourceTracker.processSystemVerification(detail);
+            }
             // 已退款子订单状态不是PAY_SUCCESS，因此不计入核对期有效核销数量和金额。
             if (verifiedOrderIds.contains(detail.getOrderId())
                     && OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue().equals(detail.getOrderStatus())) {
@@ -391,6 +446,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 if (inPeriod(detail.getRefundTime(), period)) {
                     metrics.currentSystemRefundDetails.add(detail);
                     metrics.systemCurrentRefundAmount += refundAmount;
+                    sourceTracker.processSystemRefund(detail);
                 } else if (detail.getRefundTime() != null) {
                     metrics.hasHistoricalSystemRefund = true;
                 }
@@ -404,9 +460,17 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         metrics.currentUnsupportedRows = ledger.currentUnionRows.stream()
                 .filter(row -> !TYPE_PAY.equals(row.getType()) && !TYPE_REFUND.equals(row.getType()))
                 .collect(Collectors.toList());
-        // 从全量流水中剔除核对区间，剩余部分用于判断区间外支付和跨期退款。
+        // 实际进入指标计算时逐条记录银联来源ID，重复调用也会被SourceTracker识别。
+        metrics.currentPayments.forEach(sourceTracker::processUnionPay);
+        metrics.currentRefunds.forEach(sourceTracker::processUnionRefund);
+        // 区间前和区间后的消费必须分开，避免把未来时间流水误标成历史支付。
         metrics.historicalPayments = ledger.allUnionRows.stream().filter(row -> TYPE_PAY.equals(row.getType()))
-                .filter(row -> !inPeriod(row.getTransactionTime(), period)).collect(Collectors.toList());
+                .filter(row -> before(row.getTransactionTime(), period.startDateTime))
+                .collect(Collectors.toList());
+        metrics.futurePayments = ledger.allUnionRows.stream().filter(row -> TYPE_PAY.equals(row.getType()))
+                .filter(row -> row.getTransactionTime() != null
+                        && !row.getTransactionTime().isBefore(period.endDateTimeExclusive))
+                .collect(Collectors.toList());
         metrics.historicalRefunds = ledger.allUnionRows.stream().filter(row -> TYPE_REFUND.equals(row.getType()))
                 .filter(row -> !inPeriod(row.getTransactionTime(), period)).collect(Collectors.toList());
         metrics.allPayments = ledger.allUnionRows.stream().filter(row -> TYPE_PAY.equals(row.getType()))
@@ -416,13 +480,15 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         metrics.unionCurrentPayAmount = sumUnionAmount(metrics.currentPayments);
         metrics.unionCurrentRefundAmount = sumUnionAmount(metrics.currentRefunds);
         metrics.unionHistoricalPayAmount = sumUnionAmount(metrics.historicalPayments);
+        metrics.unionFuturePayAmount = sumUnionAmount(metrics.futurePayments);
         metrics.unionHistoricalRefundAmount = sumUnionAmount(metrics.historicalRefunds);
         metrics.unionCumulativeRefundAmount = sumUnionAmount(metrics.allRefunds);
         // 银联核对期净额固定为核对期消费减核对期退款。
         metrics.unionNetAmount = metrics.unionCurrentPayAmount - metrics.unionCurrentRefundAmount;
         metrics.hasCurrentVerification = ledger.orders.stream()
                 .anyMatch(order -> Integer.valueOf(1).equals(order.getIsUsed())
-                        && inPeriod(order.getVerificationTime(), period));
+                        && inPeriod(order.getVerificationTime(), period)
+                        && isValidVerifiedOrderStatus(order.getOrderStatus()));
         metrics.hasCurrentSystemPay = ledger.orders.stream().anyMatch(order -> inPeriod(order.getPaySuccessTime(), period));
         metrics.hasHistoricalSystemPayOrVerification = ledger.orders.stream().anyMatch(order ->
                 before(order.getPaySuccessTime(), period.startDateTime)
@@ -464,21 +530,56 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         // 第二层：检查系统主订单、子订单的核销和退款状态是否自洽。
         for (Order current : ledger.orders) {
+            List<OrderDetail> currentDetails = ledger.details.stream()
+                    .filter(detail -> Objects.equals(current.getId(), detail.getOrderId()))
+                    .collect(Collectors.toList());
             if ((Integer.valueOf(1).equals(current.getIsUsed()) && current.getVerificationTime() == null)
                     || (!Integer.valueOf(1).equals(current.getIsUsed()) && current.getVerificationTime() != null)) {
                 putHit(hits, "INVALID_VERIFICATION_STATUS", "系统订单核销状态与核销时间不一致");
             }
+            if (Integer.valueOf(1).equals(current.getIsUsed())
+                    && inPeriod(current.getVerificationTime(), period)
+                    && !isValidVerifiedOrderStatus(current.getOrderStatus())) {
+                putHit(hits, "INVALID_VERIFIED_ORDER_STATUS", "核对期已核销订单的主订单状态不允许计入有效核销");
+            }
+            if (isPostPaymentStatus(current.getOrderStatus()) && current.getPaySuccessTime() == null) {
+                putHit(hits, "PAY_SUCCESS_TIME_MISSING", "订单已进入支付后状态，但支付成功时间为空");
+            }
+            // 主订单原支付金额必须等于全部子订单的原订单金额之和。
+            long detailOrderAmount = currentDetails.stream()
+                    .mapToLong(detail -> safeLong(detail.getOrderAmount())).sum();
+            if (safeLong(current.getPayAmount()) != detailOrderAmount) {
+                putHit(hits, "ORDER_DETAIL_AMOUNT_MISMATCH", "主订单支付金额与全部子订单订单金额合计不一致");
+            }
+            if (safeLong(current.getOrderQuantity()) != currentDetails.size()) {
+                putHit(hits, "ORDER_DETAIL_QUANTITY_MISMATCH", "主订单购买数量与子订单数量不一致");
+            }
             // 主订单refund_amount必须等于所有退款成功子订单的退款金额之和。
-            long detailRefundAmount = ledger.details.stream()
-                    .filter(detail -> Objects.equals(current.getId(), detail.getOrderId()))
+            List<OrderDetail> refundedDetails = currentDetails.stream()
                     .filter(detail -> OrderDetail.OrderDetailStatusEnum.REFUND.getValue()
                             .equals(detail.getOrderStatus()))
+                    .collect(Collectors.toList());
+            long detailRefundAmount = refundedDetails.stream()
                     .mapToLong(detail -> safeLong(detail.getRefundAmount())).sum();
             if (safeLong(current.getRefundAmount()) != detailRefundAmount) {
                 putHit(hits, "ORDER_REFUND_SUM_MISMATCH", "主订单退款金额与已退款子订单合计不一致");
             }
+            if (safeLong(current.getRefundQuantity()) != refundedDetails.size()) {
+                putHit(hits, "REFUND_QUANTITY_MISMATCH", "主订单退款数量与已退款子订单数量不一致");
+            }
             if (detailRefundAmount > safeLong(current.getPayAmount())) {
                 putHit(hits, "OVER_REFUND", "系统累计退款金额超过订单支付金额");
+            }
+            boolean invalidSystemAmount = current.getPayAmount() == null || current.getPayAmount() <= 0
+                    || current.getRefundAmount() == null || current.getRefundAmount() < 0
+                    || currentDetails.stream().anyMatch(detail -> detail.getOrderAmount() == null
+                    || detail.getOrderAmount() <= 0
+                    || (detail.getRefundAmount() != null && detail.getRefundAmount() < 0)
+                    || (OrderDetail.OrderDetailStatusEnum.REFUND.getValue().equals(detail.getOrderStatus())
+                    && (detail.getRefundAmount() == null || detail.getRefundAmount() <= 0
+                    || detail.getRefundAmount() > detail.getOrderAmount())));
+            if (invalidSystemAmount) {
+                putHit(hits, "INVALID_SYSTEM_AMOUNT", "系统主订单或子订单存在空值、非正订单金额或非法退款金额");
             }
         }
         boolean invalidRefundDetail = ledger.details.stream().anyMatch(detail ->
@@ -498,10 +599,14 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 // 预约日在核对结束日以后，属于“核对期支付、跨期预约”。
                 boolean futureAppointment = ledger.orders.stream().map(Order::getAppointmentDate)
                         .filter(Objects::nonNull).anyMatch(date -> !date.isBefore(period.endDateExclusive));
+                boolean historicalAppointment = ledger.orders.stream().map(Order::getAppointmentDate)
+                        .filter(Objects::nonNull).anyMatch(date -> date.isBefore(period.startDate));
                 boolean dueAppointment = ledger.orders.stream().map(Order::getAppointmentDate)
                         .filter(Objects::nonNull).anyMatch(date -> date.isBefore(period.endDateExclusive));
                 if (futureAppointment) {
                     putHit(hits, "CROSS_MONTH_APPOINTMENT", "订单在核对期支付，但预约日期在核对区间之后");
+                } else if (historicalAppointment) {
+                    putHit(hits, "HISTORICAL_APPOINTMENT_NOT_VERIFIED", "历史预约已经逾期，订单截至当前仍未核销");
                 } else if (dueAppointment) {
                     putHit(hits, "APPOINTMENT_NOT_VERIFIED", "订单预约日期已到，但核对期没有核销");
                 } else {
@@ -532,6 +637,20 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                         && current.getPaySuccessTime().isBefore(period.endDateTimeExclusive));
         if (appointmentDueWithoutVerification) {
             putHit(hits, "APPOINTMENT_NOT_VERIFIED", "预约日期在核对期且已支付，但核对期没有核销");
+        }
+        // 历史逾期且当前仍未解决的订单，每次后续对账都继续展示，直至核销或全部退款。
+        boolean historicalAppointmentNotVerified = ledger.orders.stream().anyMatch(current ->
+                current.getAppointmentDate() != null
+                        && current.getAppointmentDate().isBefore(period.startDate)
+                        && !Integer.valueOf(1).equals(current.getIsUsed())
+                        && isValidVerifiedOrderStatus(current.getOrderStatus())
+                        && current.getPaySuccessTime() != null
+                        && current.getPaySuccessTime().isBefore(period.endDateTimeExclusive));
+        if (historicalAppointmentNotVerified) {
+            putHit(hits, "HISTORICAL_APPOINTMENT_NOT_VERIFIED", "历史预约已经逾期，订单截至当前仍未核销");
+        }
+        if (!metrics.futurePayments.isEmpty()) {
+            putHit(hits, "FUTURE_PAYMENT_TIME", "银联消费时间晚于核对结束时间，不能作为区间前历史支付处理");
         }
 
         // 支付金额比较使用系统原始支付金额与银联全历史消费金额，不使用退款后的有效金额。
@@ -601,7 +720,8 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private String chooseAdjustmentOwner(List<AnomalyHit> hits) {
         // 优先选择最能解释账面差额的业务异常，数据质量标签只作为关联标签展示。
         List<String> priorities = Arrays.asList(
-                "CROSS_MONTH_APPOINTMENT", "HISTORICAL_PAY_CURRENT_VERIFICATION",
+                "CROSS_MONTH_APPOINTMENT", "HISTORICAL_APPOINTMENT_NOT_VERIFIED",
+                "HISTORICAL_PAY_CURRENT_VERIFICATION",
                 "UNION_PAYMENT_ORDER_NOT_FOUND", "APPOINTMENT_NOT_VERIFIED",
                 "UNION_PAYMENT_WITHOUT_CURRENT_VERIFICATION", "VERIFICATION_WITHOUT_ANY_PAYMENT",
                 "SYSTEM_PAYMENT_UNION_MISSING", "PAY_AMOUNT_MISMATCH",
@@ -718,6 +838,11 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         for (UnionPayData payment : metrics.historicalPayments) {
             union.getHistoricalPaymentDetails().add(toPaymentDetail(payment));
         }
+        union.setFuturePayCount(metrics.futurePayments.size());
+        union.setFuturePayAmount(metrics.unionFuturePayAmount);
+        for (UnionPayData payment : metrics.futurePayments) {
+            union.getFuturePaymentDetails().add(toPaymentDetail(payment));
+        }
         union.setRefundCount(metrics.currentRefunds.size());
         union.setRefundAmount(metrics.unionCurrentRefundAmount);
         // 银联多笔退款同样逐条返回，用参考号区分每一笔流水。
@@ -788,6 +913,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         result.getGroups().add(group(GROUP_PAYMENT, "支付与核销异常",
                 category("CROSS_MONTH_APPOINTMENT", "核对期支付、跨期预约"),
                 category("APPOINTMENT_NOT_VERIFIED", "预约到期未核销"),
+                category("HISTORICAL_APPOINTMENT_NOT_VERIFIED", "历史遗留未核销"),
                 category("UNION_PAYMENT_WITHOUT_CURRENT_VERIFICATION", "银联有支付、系统核对期无核销"),
                 category("UNION_PAYMENT_ORDER_NOT_FOUND", "银联有支付、系统订单不存在"),
                 category("HISTORICAL_PAY_CURRENT_VERIFICATION", "区间前支付、核对期核销"),
@@ -806,7 +932,13 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         result.getGroups().add(group(GROUP_DATA, "订单数据异常",
                 category("SYSTEM_TRADE_NO_MISSING", "系统订单缺少银联订单号"),
                 category("DUPLICATE_SYSTEM_TRADE_NO", "系统银联订单号重复"),
+                category("ORDER_DETAIL_AMOUNT_MISMATCH", "主子订单支付金额不一致"),
+                category("ORDER_DETAIL_QUANTITY_MISMATCH", "主子订单数量不一致"),
                 category("ORDER_REFUND_SUM_MISMATCH", "主子订单退款汇总不一致"),
+                category("REFUND_QUANTITY_MISMATCH", "主子订单退款数量不一致"),
+                category("INVALID_SYSTEM_AMOUNT", "系统订单金额无效"),
+                category("INVALID_VERIFIED_ORDER_STATUS", "已核销订单状态不合法"),
+                category("PAY_SUCCESS_TIME_MISSING", "支付成功时间缺失"),
                 category("INVALID_VERIFICATION_STATUS", "核销状态与核销时间不一致"),
                 category("INVALID_REFUND_STATUS", "退款状态与退款时间不一致"),
                 category("UNCLASSIFIED_BALANCE_DIFFERENCE", "未归类余额差异")));
@@ -814,6 +946,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 category("UNION_TRADE_NO_MISSING", "银联流水缺少商户订单号"),
                 category("UNION_AMOUNT_INVALID", "银联流水金额无效"),
                 category("UNSUPPORTED_UNION_TYPE", "银联交易类型未识别"),
+                category("FUTURE_PAYMENT_TIME", "银联消费时间晚于核对区间"),
                 category("DUPLICATE_UNION_REFERENCE", "银联参考号重复")));
         return result;
     }
@@ -869,7 +1002,8 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                                    Ledger ledger, QueryPeriod period) {
         for (Order order : ledger.orders) {
             if (!Integer.valueOf(1).equals(order.getIsUsed())
-                    || !inPeriod(order.getVerificationTime(), period)) {
+                    || !inPeriod(order.getVerificationTime(), period)
+                    || !isValidVerifiedOrderStatus(order.getOrderStatus())) {
                 continue;
             }
             String verificationMonth = YearMonth.from(order.getVerificationTime()).toString();
@@ -913,24 +1047,27 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .mapToLong(ReconciliationAbnormalResult.BillingDetail::getAmount).sum());
     }
 
-    private void finishSourceControl(ReconciliationAbnormalResult result,
-                                     List<OrderDetail> currentRefundDetails,
-                                     List<UnionPayData> currentUnionRows,
+    private void finishSourceControl(ReconciliationAbnormalResult result, SourceTracker tracker,
                                      long unclassifiedCount) {
-        // 记录四类原始数据的读取量和处理量，确保没有数据被静默遗漏。
+        // 读取量来自预先登记的唯一ID，处理量来自台账计算时的逐条打标，二者不再相互赋值。
         ReconciliationAbnormalResult.SourceControl source = result.getSourceControl();
-        source.setSystemVerificationDetailCount(result.getBalance().getSystemVerificationQuantity());
-        source.setClassifiedSystemVerificationDetailCount(source.getSystemVerificationDetailCount());
-        source.setSystemRefundDetailCount(currentRefundDetails.size());
-        source.setClassifiedSystemRefundDetailCount(currentRefundDetails.size());
-        long payRows = currentUnionRows.stream().filter(row -> TYPE_PAY.equals(row.getType())).count();
-        long refundRows = currentUnionRows.stream().filter(row -> TYPE_REFUND.equals(row.getType())).count();
-        source.setUnionPayRowCount(payRows);
-        source.setClassifiedUnionPayRowCount(payRows);
-        source.setUnionRefundRowCount(refundRows);
-        source.setClassifiedUnionRefundRowCount(refundRows);
+        source.setSystemVerificationDetailCount(tracker.systemVerificationExpected.size());
+        source.setClassifiedSystemVerificationDetailCount(tracker.processedSystemVerificationCount());
+        source.setSystemRefundDetailCount(tracker.systemRefundExpected.size());
+        source.setClassifiedSystemRefundDetailCount(tracker.processedSystemRefundCount());
+        source.setUnionPayRowCount(tracker.unionPayExpected.size());
+        source.setClassifiedUnionPayRowCount(tracker.processedUnionPayCount());
+        source.setUnionRefundRowCount(tracker.unionRefundExpected.size());
+        source.setClassifiedUnionRefundRowCount(tracker.processedUnionRefundCount());
         source.setUnclassifiedCount(unclassifiedCount);
-        source.setDuplicateClassificationCount(0L);
+        long unprocessed = tracker.unprocessedCount();
+        long duplicated = tracker.duplicateProcessedCount();
+        source.setUnprocessedSourceCount(unprocessed);
+        source.setDuplicateProcessedCount(duplicated);
+        // 旧字段继续返回相同结果，避免已有调用方升级期间读不到重复处理数量。
+        source.setDuplicateClassificationCount(duplicated);
+        source.setSourceFullyProcessed(unprocessed == 0L && duplicated == 0L);
+        result.setSourceFullyProcessed(source.isSourceFullyProcessed());
     }
 
     private void finishBalance(ReconciliationAbnormalResult result) {
@@ -945,15 +1082,15 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         balance.setAdjustedUnionNetAmount(balance.getUnionNetAmount() + adjustment);
         // 最终差额 = 系统有效核销金额 - 调整后银联净额；正常必须为0。
         balance.setBalanceDifference(balance.getSystemVerificationAmount() - balance.getAdjustedUnionNetAmount());
-        ReconciliationAbnormalResult.SourceControl source = result.getSourceControl();
-        // 金额闭环、无未知异常、无重复处理、四类数据数量一致时才算完全平衡。
-        balance.setBalanced(balance.getBalanceDifference() == 0L
-                && source.getUnclassifiedCount() == 0L
-                && source.getDuplicateClassificationCount() == 0L
-                && source.getSystemVerificationDetailCount() == source.getClassifiedSystemVerificationDetailCount()
-                && source.getSystemRefundDetailCount() == source.getClassifiedSystemRefundDetailCount()
-                && source.getUnionPayRowCount() == source.getClassifiedUnionPayRowCount()
-                && source.getUnionRefundRowCount() == source.getClassifiedUnionRefundRowCount());
+        // 金额闭环、来源完整和存在业务异常是三个独立结论，不能再用一个balanced字段混合表达。
+        boolean amountBalanced = balance.getBalanceDifference() == 0L;
+        boolean hasAnomalies = result.getGroups().stream()
+                .flatMap(group -> group.getCategories().stream())
+                .anyMatch(category -> !category.getDetails().isEmpty());
+        result.setAmountBalanced(amountBalanced);
+        result.setHasAnomalies(hasAnomalies);
+        // 保留旧字段作为金额闭环的兼容别名，新代码应读取外层amountBalanced。
+        balance.setBalanced(amountBalanced);
     }
 
     private long sumUnionAmount(List<UnionPayData> rows) {
@@ -973,6 +1110,17 @@ public class ReconciliationServiceImpl implements ReconciliationService {
             return 0L;
         }
         return amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValue();
+    }
+
+    private boolean isValidVerifiedOrderStatus(Integer status) {
+        return Order.OrderStatusEnum.SUCCESS.getValue().equals(status)
+                || Order.OrderStatusEnum.PARTIAL_REFUND.getValue().equals(status);
+    }
+
+    private boolean isPostPaymentStatus(Integer status) {
+        return isValidVerifiedOrderStatus(status)
+                || Order.OrderStatusEnum.ALL_REFUND.getValue().equals(status)
+                || Order.OrderStatusEnum.REFUNDING.getValue().equals(status);
     }
 
     private static long safeLong(Integer value) {
@@ -1023,6 +1171,114 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         }
     }
 
+    private static class SourceTracker {
+        // expected保存原始唯一ID，processed保存每个ID实际进入核心指标计算的次数。
+        private final Set<String> systemVerificationExpected = new LinkedHashSet<>();
+        private final Set<String> systemRefundExpected = new LinkedHashSet<>();
+        private final Set<String> unionPayExpected = new LinkedHashSet<>();
+        private final Set<String> unionRefundExpected = new LinkedHashSet<>();
+        private final Map<String, Long> systemVerificationProcessed = new HashMap<>();
+        private final Map<String, Long> systemRefundProcessed = new HashMap<>();
+        private final Map<String, Long> unionPayProcessed = new HashMap<>();
+        private final Map<String, Long> unionRefundProcessed = new HashMap<>();
+
+        private void registerSystemVerification(OrderDetail detail) {
+            systemVerificationExpected.add(detailKey(detail));
+        }
+
+        private void registerSystemRefund(OrderDetail detail) {
+            systemRefundExpected.add(detailKey(detail));
+        }
+
+        private void registerUnionPay(UnionPayData row) {
+            unionPayExpected.add(unionKey(row));
+        }
+
+        private void registerUnionRefund(UnionPayData row) {
+            unionRefundExpected.add(unionKey(row));
+        }
+
+        private void processSystemVerification(OrderDetail detail) {
+            increment(systemVerificationProcessed, detailKey(detail));
+        }
+
+        private void processSystemRefund(OrderDetail detail) {
+            increment(systemRefundProcessed, detailKey(detail));
+        }
+
+        private void processUnionPay(UnionPayData row) {
+            increment(unionPayProcessed, unionKey(row));
+        }
+
+        private void processUnionRefund(UnionPayData row) {
+            increment(unionRefundProcessed, unionKey(row));
+        }
+
+        private long processedSystemVerificationCount() {
+            return processedExpectedCount(systemVerificationExpected, systemVerificationProcessed);
+        }
+
+        private long processedSystemRefundCount() {
+            return processedExpectedCount(systemRefundExpected, systemRefundProcessed);
+        }
+
+        private long processedUnionPayCount() {
+            return processedExpectedCount(unionPayExpected, unionPayProcessed);
+        }
+
+        private long processedUnionRefundCount() {
+            return processedExpectedCount(unionRefundExpected, unionRefundProcessed);
+        }
+
+        private long unprocessedCount() {
+            return systemVerificationExpected.size() - processedSystemVerificationCount()
+                    + systemRefundExpected.size() - processedSystemRefundCount()
+                    + unionPayExpected.size() - processedUnionPayCount()
+                    + unionRefundExpected.size() - processedUnionRefundCount();
+        }
+
+        private long duplicateProcessedCount() {
+            return invalidProcessCount(systemVerificationExpected, systemVerificationProcessed)
+                    + invalidProcessCount(systemRefundExpected, systemRefundProcessed)
+                    + invalidProcessCount(unionPayExpected, unionPayProcessed)
+                    + invalidProcessCount(unionRefundExpected, unionRefundProcessed);
+        }
+
+        private static void increment(Map<String, Long> processed, String key) {
+            processed.merge(key, 1L, Long::sum);
+        }
+
+        private static long processedExpectedCount(Set<String> expected, Map<String, Long> processed) {
+            return expected.stream().filter(key -> processed.getOrDefault(key, 0L) > 0L).count();
+        }
+
+        private static long invalidProcessCount(Set<String> expected, Map<String, Long> processed) {
+            long count = 0L;
+            for (Map.Entry<String, Long> entry : processed.entrySet()) {
+                // 未登记却参与计算，或同一ID参与两次以上，都属于“没有且仅处理一次”。
+                count += expected.contains(entry.getKey())
+                        ? Math.max(0L, entry.getValue() - 1L) : entry.getValue();
+            }
+            return count;
+        }
+
+        private static String detailKey(OrderDetail detail) {
+            if (detail.getId() != null) {
+                return "DETAIL#" + detail.getId();
+            }
+            return "DETAIL_NULL#" + detail.getOrderId() + "#" + detail.getOrderNo()
+                    + "#" + detail.getCreateTime();
+        }
+
+        private static String unionKey(UnionPayData row) {
+            if (row.getId() != null) {
+                return "UNION#" + row.getId();
+            }
+            return "UNION_NULL#" + row.getMerchantOrderNo() + "#" + row.getReferenceNumber()
+                    + "#" + row.getTransactionTime() + "#" + row.getType();
+        }
+    }
+
     private static class LedgerMetrics {
         private Order primaryOrder;
         private long systemValidQuantity;
@@ -1032,6 +1288,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         private long unionCurrentPayAmount;
         private long unionCurrentRefundAmount;
         private long unionHistoricalPayAmount;
+        private long unionFuturePayAmount;
         private long unionHistoricalRefundAmount;
         private long unionCumulativeRefundAmount;
         private long unionNetAmount;
@@ -1044,6 +1301,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         private List<UnionPayData> currentRefunds = new ArrayList<>();
         private List<UnionPayData> currentUnsupportedRows = new ArrayList<>();
         private List<UnionPayData> historicalPayments = new ArrayList<>();
+        private List<UnionPayData> futurePayments = new ArrayList<>();
         private List<UnionPayData> historicalRefunds = new ArrayList<>();
         private List<UnionPayData> allPayments = new ArrayList<>();
         private List<UnionPayData> allRefunds = new ArrayList<>();

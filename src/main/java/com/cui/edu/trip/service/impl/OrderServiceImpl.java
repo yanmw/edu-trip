@@ -51,6 +51,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -1632,7 +1633,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult(checkMsg);
         }
 
-        // 第三步：查询订单。订单表已不再使用逻辑删除字段，按订单号直接定位主订单。
+        // 第三步：查询订单。按订单号直接定位主订单。
         Order order = getOrderByOrderNo(vo.getOrderNo());
 
         // 第四步：校验订单归属、订单状态、预约日期和是否已使用。
@@ -3107,6 +3108,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
         if (vo.getAppointmentDate().isBefore(LocalDate.now())) {
             return "预约日期不能早于今天";
+        }
+        // 当天 18 点后不允许再预约当天的活动，但预约日期是明天及以后不受限制。
+        if (vo.getAppointmentDate().isEqual(LocalDate.now()) && LocalTime.now().isAfter(LocalTime.of(18, 0))) {
+            return "当天18点后无法预约当日活动，请选择其他日期";
         }
         if (ObjectUtil.isEmpty(vo.getList())) {
             return "下单详情不能为空";

@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -151,6 +152,8 @@ class ReconciliationServiceImplTest {
                 LocalDateTime.of(2026, 6, 1, 11, 0), 1);
         order.setOrderStatus(Order.OrderStatusEnum.PARTIAL_REFUND.getValue());
         order.setRefundAmount(3000);
+        order.setOrderQuantity(2);
+        order.setRefundQuantity(2);
         OrderDetail refundDetail1 = detail(31L, 3L, 1000,
                 OrderDetail.OrderDetailStatusEnum.REFUND.getValue(),
                 LocalDateTime.of(2026, 7, 5, 10, 0), "R003");
@@ -190,6 +193,8 @@ class ReconciliationServiceImplTest {
                 LocalDateTime.of(2026, 7, 3, 11, 0), 1);
         order.setOrderStatus(Order.OrderStatusEnum.PARTIAL_REFUND.getValue());
         order.setRefundAmount(3000);
+        order.setOrderQuantity(2);
+        order.setRefundQuantity(1);
         OrderDetail validDetail = detail(51L, 5L, 7000,
                 OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
         OrderDetail refundDetail = detail(52L, 5L, 3000,
@@ -223,6 +228,8 @@ class ReconciliationServiceImplTest {
                 LocalDateTime.of(2026, 7, 2, 11, 0), 1);
         order.setOrderStatus(Order.OrderStatusEnum.PARTIAL_REFUND.getValue());
         order.setRefundAmount(3000);
+        order.setOrderQuantity(2);
+        order.setRefundQuantity(1);
         OrderDetail validDetail = detail(41L, 4L, 7000,
                 OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
         OrderDetail futureRefund = detail(42L, 4L, 3000,
@@ -246,6 +253,139 @@ class ReconciliationServiceImplTest {
         assertEquals(7000L, result.getBalance().getSystemVerificationAmount());
         assertEquals(10000L, result.getBalance().getUnionNetAmount());
         assertTrue(result.getBalance().isBalanced());
+    }
+
+    @Test
+    void keepsHistoricalOverdueAppointmentVisibleUntilResolved() {
+        Fixture fixture = fixture();
+        Order order = order(7L, "UP007", 6000,
+                LocalDateTime.of(2026, 5, 10, 9, 0),
+                LocalDate.of(2026, 6, 5), null, 0);
+        OrderDetail detail = detail(71L, 7L, 6000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        UnionPayData historicalPayment = unionRow(701L, "UP007", "消费", "60.00",
+                LocalDateTime.of(2026, 5, 10, 9, 1));
+        fixture.stub(Collections.emptyList(), Collections.singletonList(detail),
+                Collections.singletonList(order), Collections.emptyList(),
+                Collections.singletonList(historicalPayment));
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+
+        assertEquals(1L, category(result, "HISTORICAL_APPOINTMENT_NOT_VERIFIED").getOrderCount());
+        assertTrue(result.isHasAnomalies());
+        assertTrue(result.isAmountBalanced());
+    }
+
+    @Test
+    void excludesVerifiedOrderWithIllegalMainStatusFromBilling() {
+        Fixture fixture = fixture();
+        Order order = order(8L, "UP008", 9000,
+                LocalDateTime.of(2026, 7, 2, 9, 0),
+                LocalDate.of(2026, 7, 2),
+                LocalDateTime.of(2026, 7, 2, 10, 0), 1);
+        order.setOrderStatus(Order.OrderStatusEnum.ALL_REFUND.getValue());
+        OrderDetail detail = detail(81L, 8L, 9000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        UnionPayData payment = unionRow(801L, "UP008", "消费", "90.00",
+                LocalDateTime.of(2026, 7, 2, 9, 1));
+        fixture.stub(Collections.emptyList(), Collections.singletonList(detail),
+                Collections.singletonList(order), Collections.singletonList(payment),
+                Collections.singletonList(payment));
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+
+        assertEquals(1L, category(result, "INVALID_VERIFIED_ORDER_STATUS").getOrderCount());
+        assertEquals(0L, result.getBilling().getTotalQuantity());
+        assertEquals(0L, result.getBalance().getSystemVerificationAmount());
+        assertTrue(result.isAmountBalanced());
+    }
+
+    @Test
+    void reportsMainAndDetailAmountAndQuantityMismatches() {
+        Fixture fixture = fixture();
+        Order order = order(9L, "UP009", 10000,
+                LocalDateTime.of(2026, 7, 4, 9, 0),
+                LocalDate.of(2026, 8, 1), null, 0);
+        order.setOrderQuantity(2);
+        order.setRefundQuantity(1);
+        OrderDetail detail = detail(91L, 9L, 8000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        UnionPayData payment = unionRow(901L, "UP009", "消费", "100.00",
+                LocalDateTime.of(2026, 7, 4, 9, 1));
+        fixture.stub(Collections.emptyList(), Collections.singletonList(detail),
+                Collections.singletonList(order), Collections.singletonList(payment),
+                Collections.singletonList(payment));
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+
+        assertEquals(1L, category(result, "ORDER_DETAIL_AMOUNT_MISMATCH").getOrderCount());
+        assertEquals(1L, category(result, "ORDER_DETAIL_QUANTITY_MISMATCH").getOrderCount());
+        assertEquals(1L, category(result, "REFUND_QUANTITY_MISMATCH").getOrderCount());
+    }
+
+    @Test
+    void reportsMissingPaySuccessTimeWithoutUsingCreateTimeAsPaymentTime() {
+        Fixture fixture = fixture();
+        Order order = order(12L, "UP012", 3000, null,
+                LocalDate.of(2026, 7, 8), null, 0);
+        order.setCreateTime(LocalDateTime.of(2026, 7, 8, 23, 59, 59));
+        OrderDetail detail = detail(121L, 12L, 3000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        fixture.stub(Collections.emptyList(), Collections.singletonList(detail),
+                Collections.singletonList(order), Collections.emptyList(), Collections.emptyList());
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+
+        assertEquals(1L, category(result, "PAY_SUCCESS_TIME_MISSING").getOrderCount());
+        assertEquals(0L, result.getBalance().getUnionPayAmount());
+        assertEquals(0L, result.getBalance().getSystemVerificationAmount());
+    }
+
+    @Test
+    void separatesFutureUnionPaymentFromHistoricalPayment() {
+        Fixture fixture = fixture();
+        Order order = order(10L, "UP010", 5000,
+                LocalDateTime.of(2026, 6, 1, 9, 0),
+                LocalDate.of(2026, 7, 5),
+                LocalDateTime.of(2026, 7, 5, 10, 0), 1);
+        OrderDetail detail = detail(101L, 10L, 5000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        UnionPayData futurePayment = unionRow(1001L, "UP010", "消费", "50.00",
+                LocalDateTime.of(2026, 8, 1, 0, 0));
+        fixture.stub(Collections.emptyList(), Collections.singletonList(detail),
+                Collections.singletonList(order), Collections.emptyList(),
+                Collections.singletonList(futurePayment));
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+        ReconciliationAbnormalResult.AbnormalDetail abnormal =
+                category(result, "FUTURE_PAYMENT_TIME").getDetails().get(0);
+
+        assertEquals(0L, abnormal.getUnion().getHistoricalPayCount());
+        assertEquals(1L, abnormal.getUnion().getFuturePayCount());
+        assertEquals(5000L, abnormal.getUnion().getFuturePayAmount());
+    }
+
+    @Test
+    void sourceControlUsesActualUniqueIdProcessingCounts() {
+        Fixture fixture = fixture();
+        Order order = order(11L, "UP011", 4000,
+                LocalDateTime.of(2026, 7, 6, 9, 0),
+                LocalDate.of(2026, 7, 6),
+                LocalDateTime.of(2026, 7, 6, 10, 0), 1);
+        OrderDetail duplicatedDetail = detail(111L, 11L, 4000,
+                OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue(), null, null);
+        UnionPayData payment = unionRow(1101L, "UP011", "消费", "40.00",
+                LocalDateTime.of(2026, 7, 6, 9, 1));
+        fixture.stub(Collections.emptyList(), Arrays.asList(duplicatedDetail, duplicatedDetail),
+                Collections.singletonList(order), Collections.singletonList(payment),
+                Collections.singletonList(payment));
+
+        ReconciliationAbnormalResult result = fixture.service.findAbnormalData(query());
+
+        assertEquals(1L, result.getSourceControl().getSystemVerificationDetailCount());
+        assertEquals(1L, result.getSourceControl().getClassifiedSystemVerificationDetailCount());
+        assertEquals(1L, result.getSourceControl().getDuplicateProcessedCount());
+        assertFalse(result.isSourceFullyProcessed());
     }
 
     private ReconciliationAbnormalQueryVO query() {

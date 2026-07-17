@@ -21,6 +21,12 @@ public class ReconciliationAbnormalResult {
     private LocalDate endDate;
     /** 金额单位，固定为CENT（分）。 */
     private String amountUnit = "CENT";
+    /** 加入异常调整后，系统有效核销金额与银联净额是否完全一致。 */
+    private boolean amountBalanced;
+    /** 四类原始数据是否全部且仅进入一次对账计算。 */
+    private boolean sourceFullyProcessed;
+    /** 是否存在至少一条业务或数据质量异常。 */
+    private boolean hasAnomalies;
     /** 总账平衡结果。 */
     private Balance balance = new Balance();
     /** 原始数据是否全部且仅被处理一次。 */
@@ -56,7 +62,7 @@ public class ReconciliationAbnormalResult {
         private long adjustedUnionNetAmount;
         /** 系统有效核销金额减调整后银联净额。 */
         private long balanceDifference;
-        /** 差额为0且无未归类、重复处理数据时为true。 */
+        /** 兼容旧前端的金额闭环标记，值与外层amountBalanced一致。 */
         private boolean balanced;
     }
 
@@ -82,6 +88,12 @@ public class ReconciliationAbnormalResult {
         private long unclassifiedCount;
         /** 同一份原始数据被重复承担金额调整的次数，正常应为0。 */
         private long duplicateClassificationCount;
+        /** 四类原始数据中没有进入对账计算的总数量。 */
+        private long unprocessedSourceCount;
+        /** 四类原始数据被重复进入对账计算的总次数。 */
+        private long duplicateProcessedCount;
+        /** 没有遗漏且没有重复处理时为true。 */
+        private boolean sourceFullyProcessed;
     }
 
     @Data
@@ -185,7 +197,7 @@ public class ReconciliationAbnormalResult {
         /** 系统订单更新时间。 */
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime updateTime;
-        /** 系统支付成功时间；业务上可近似使用创建时间。 */
+        /** 系统支付成功时间，以支付回调时间为准，不能使用创建时间替代。 */
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime paySuccessTime;
         /** 预约日期。 */
@@ -272,10 +284,14 @@ public class ReconciliationAbnormalResult {
         private long payAmount;
         /** 银联核对区间内消费流水明细。 */
         private List<UnionPaymentDetail> paymentDetails = new ArrayList<>();
-        /** 不在核对区间内的消费流水。 */
+        /** 核对区间之前的消费流水。 */
         private long historicalPayCount;
         private long historicalPayAmount;
         private List<UnionPaymentDetail> historicalPaymentDetails = new ArrayList<>();
+        /** 晚于核对区间的消费流水，正常业务不应出现。 */
+        private long futurePayCount;
+        private long futurePayAmount;
+        private List<UnionPaymentDetail> futurePaymentDetails = new ArrayList<>();
         /** 银联核对区间内退款流水数量，同交易号允许多条。 */
         private long refundCount;
         /** 银联核对区间内退款流水金额合计，单位分。 */

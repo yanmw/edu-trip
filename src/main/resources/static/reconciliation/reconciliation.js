@@ -242,7 +242,7 @@
             ? `发现 ${stats.uniqueOrders} 个异常订单，分布在 ${stats.activeCategories} 个异常分类中。`
             : '所选核对区间没有发现异常订单。';
 
-        renderBalance(balance);
+        renderBalance(state.result);
         renderMetrics(balance);
         renderCoverage(state.result.sourceControl || {});
         renderBilling(state.result.billing || {});
@@ -250,15 +250,30 @@
         resultContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function renderBalance(balance) {
-        const balanced = Boolean(balance.balanced);
+    function renderBalance(result) {
+        const balance = result.balance || {};
+        const amountBalanced = result.amountBalanced === undefined
+            ? Boolean(balance.balanced) : Boolean(result.amountBalanced);
+        const sourceFullyProcessed = result.sourceFullyProcessed === undefined
+            ? Boolean((result.sourceControl || {}).sourceFullyProcessed) : Boolean(result.sourceFullyProcessed);
+        const hasAnomalies = Boolean(result.hasAnomalies);
+        const overallHealthy = amountBalanced && sourceFullyProcessed;
         const banner = el('balance-banner');
-        banner.classList.toggle('unbalanced', !balanced);
-        banner.querySelector('.balance-symbol').textContent = balanced ? '✓' : '!';
-        el('balance-title').textContent = balanced ? '账目已完全平衡' : '账目尚未完全平衡';
-        el('balance-description').textContent = balanced
-            ? '系统有效核销金额与调整后银联净额一致，原始数据已完整处理。'
-            : '仍存在金额差额、未归类数据或数据覆盖问题，请检查下方异常明细。';
+        banner.classList.toggle('unbalanced', !overallHealthy);
+        banner.querySelector('.balance-symbol').textContent = overallHealthy ? '✓' : '!';
+        if (!amountBalanced) {
+            el('balance-title').textContent = '金额尚未闭环';
+            el('balance-description').textContent = '系统有效核销金额与调整后银联净额仍有差额，请检查异常明细。';
+        } else if (!sourceFullyProcessed) {
+            el('balance-title').textContent = '金额已闭环，来源数据不完整';
+            el('balance-description').textContent = '金额公式已经归零，但存在原始数据遗漏或重复处理。';
+        } else if (hasAnomalies) {
+            el('balance-title').textContent = '金额已闭环，存在已解释异常';
+            el('balance-description').textContent = '原始数据已完整处理，异常调整已经解释系统与银联之间的差异。';
+        } else {
+            el('balance-title').textContent = '金额已闭环，无异常数据';
+            el('balance-description').textContent = '系统有效核销金额与银联净额一致，原始数据全部且仅处理一次。';
+        }
         el('balance-difference').textContent = formatMoney(balance.balanceDifference, true);
 
         el('formula-pay').textContent = formatMoney(balance.unionPayAmount);
@@ -266,8 +281,8 @@
         el('formula-adjustment').textContent = formatMoney(balance.abnormalAdjustmentAmount, true);
         el('formula-system').textContent = formatMoney(balance.systemVerificationAmount);
         const formulaStatus = el('formula-status');
-        formulaStatus.textContent = balanced ? '已闭环' : '未闭环';
-        formulaStatus.className = `status-pill ${balanced ? 'success' : 'danger'}`;
+        formulaStatus.textContent = amountBalanced ? '已闭环' : '未闭环';
+        formulaStatus.className = `status-pill ${amountBalanced ? 'success' : 'danger'}`;
     }
 
     function renderMetrics(balance) {
@@ -287,6 +302,8 @@
             ['银联消费流水', source.unionPayRowCount, source.classifiedUnionPayRowCount],
             ['银联退款流水', source.unionRefundRowCount, source.classifiedUnionRefundRowCount]
         ];
+        const unprocessed = Number(source.unprocessedSourceCount || 0);
+        const duplicated = Number(source.duplicateProcessedCount ?? source.duplicateClassificationCount ?? 0);
         el('coverage-grid').innerHTML = rows.map(([label, total, handled]) => {
             const covered = Number(total || 0) === Number(handled || 0);
             return `<article class="coverage-item">
@@ -294,12 +311,17 @@
                 <strong>${Number(handled || 0).toLocaleString('zh-CN')} / ${Number(total || 0).toLocaleString('zh-CN')}</strong>
                 <small>${covered ? '全部进入对账计算' : '存在未处理数据'}</small>
             </article>`;
-        }).join('');
-        const complete = rows.every(([, total, handled]) => Number(total || 0) === Number(handled || 0))
-            && Number(source.unclassifiedCount || 0) === 0
-            && Number(source.duplicateClassificationCount || 0) === 0;
+        }).join('') + `<article class="coverage-item">
+            <div class="coverage-label"><span>逐条处理完整性</span><span class="coverage-check">${unprocessed === 0 && duplicated === 0 ? '✓' : '!'}</span></div>
+            <strong>遗漏 ${unprocessed.toLocaleString('zh-CN')} / 重复 ${duplicated.toLocaleString('zh-CN')}</strong>
+            <small>${unprocessed === 0 && duplicated === 0 ? '每条原始数据仅处理一次' : '请检查来源数据处理过程'}</small>
+        </article>`;
+        const complete = source.sourceFullyProcessed === undefined
+            ? rows.every(([, total, handled]) => Number(total || 0) === Number(handled || 0))
+                && unprocessed === 0 && duplicated === 0
+            : Boolean(source.sourceFullyProcessed);
         const status = el('coverage-status');
-        status.textContent = complete ? '全部处理' : '需要检查';
+        status.textContent = complete ? '全部且仅处理一次' : '需要检查';
         status.className = `status-pill ${complete ? 'success' : 'danger'}`;
     }
 
@@ -476,7 +498,8 @@
                 <h3>银联流水</h3>
                 <div class="detail-grid">
                     ${detailField('核对期消费', `${union.payCount || 0} 笔 / ${formatMoney(union.payAmount)}`)}
-                    ${detailField('区间外消费', `${union.historicalPayCount || 0} 笔 / ${formatMoney(union.historicalPayAmount)}`)}
+                    ${detailField('区间前消费', `${union.historicalPayCount || 0} 笔 / ${formatMoney(union.historicalPayAmount)}`)}
+                    ${detailField('区间后消费', `${union.futurePayCount || 0} 笔 / ${formatMoney(union.futurePayAmount)}`)}
                     ${detailField('核对期退款', `${union.refundCount || 0} 笔 / ${formatMoney(union.refundAmount)}`)}
                     ${detailField('区间外退款', `${union.historicalRefundCount || 0} 笔 / ${formatMoney(union.historicalRefundAmount)}`)}
                 </div>
@@ -494,7 +517,7 @@
                     { key: 'tid', label: '终端号' },
                     { key: 'unionOrderNo', label: '银商订单号' }
                 ])}
-                ${renderSubtable('区间外消费明细', union.historicalPaymentDetails, [
+                ${renderSubtable('区间前消费明细', union.historicalPaymentDetails, [
                     { key: 'id', label: '流水ID' },
                     { key: 'transactionTime', label: '交易时间', format: formatDate },
                     { key: 'amount', label: '消费金额', format: formatMoney },
@@ -504,6 +527,16 @@
                     { key: 'settlementDate', label: '结算日期' },
                     { key: 'channel', label: '交易渠道' },
                     { key: 'cardNo', label: '卡号' },
+                    { key: 'mid', label: '商户号' },
+                    { key: 'tid', label: '终端号' },
+                    { key: 'unionOrderNo', label: '银商订单号' }
+                ])}
+                ${renderSubtable('区间后消费明细', union.futurePaymentDetails, [
+                    { key: 'id', label: '流水ID' },
+                    { key: 'transactionTime', label: '交易时间', format: formatDate },
+                    { key: 'amount', label: '消费金额', format: formatMoney },
+                    { key: 'referenceNumber', label: '参考号' },
+                    { key: 'settlementDate', label: '结算日期' },
                     { key: 'mid', label: '商户号' },
                     { key: 'tid', label: '终端号' },
                     { key: 'unionOrderNo', label: '银商订单号' }
@@ -618,7 +651,7 @@
                         handlingCharge: 30, netAmount: 12770, referenceNumber: 'REF251218001',
                         settlementDate: '2025-12-18', channel: '微信', cardNo: '****',
                         mid: '898102100002649', tid: 'KF994K4C', unionOrderNo: 'UMS251218001' }
-                ], refundCount: 0, refundAmount: 0,
+                ], futurePayCount: 0, futurePayAmount: 0, futurePaymentDetails: [], refundCount: 0, refundAmount: 0,
                 refundDetails: [], historicalRefundCount: 0, historicalRefundAmount: 0,
                 historicalRefundDetails: []
             },
@@ -655,7 +688,8 @@
             },
             union: {
                 paymentExists: false, payCount: 0, payAmount: 0, paymentDetails: [], historicalPayCount: 1,
-                historicalPayAmount: 10000, historicalPaymentDetails: [], refundCount: 2, refundAmount: 3000,
+                historicalPayAmount: 10000, historicalPaymentDetails: [],
+                futurePayCount: 0, futurePayAmount: 0, futurePaymentDetails: [], refundCount: 2, refundAmount: 3000,
                 refundDetails: [
                     { id: 9911, transactionTime: '2026-01-16 09:28:14', refundAmount: 1000, referenceNumber: 'REF260116001' },
                     { id: 9912, transactionTime: '2026-01-16 09:30:48', refundAmount: 2000, referenceNumber: 'REF260116002' }
@@ -665,6 +699,7 @@
         };
         return {
             museumId: '1', startDate: '2026-01-01', endDate: '2026-01-18', amountUnit: 'CENT',
+            amountBalanced: true, sourceFullyProcessed: true, hasAnomalies: true,
             balance: {
                 systemVerificationQuantity: 126, systemVerificationAmount: 849600, systemRefundCount: 2,
                 systemRefundAmount: 3000, unionPayCount: 119, unionPayAmount: 836800, unionRefundCount: 2,
@@ -676,7 +711,8 @@
                 systemRefundDetailCount: 2, classifiedSystemRefundDetailCount: 2,
                 unionPayRowCount: 119, classifiedUnionPayRowCount: 119,
                 unionRefundRowCount: 2, classifiedUnionRefundRowCount: 2,
-                unclassifiedCount: 0, duplicateClassificationCount: 0
+                unclassifiedCount: 0, duplicateClassificationCount: 0,
+                unprocessedSourceCount: 0, duplicateProcessedCount: 0, sourceFullyProcessed: true
             },
             billing: {
                 totalQuantity: 126,

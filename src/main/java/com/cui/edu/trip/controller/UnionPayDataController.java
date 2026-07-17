@@ -90,6 +90,21 @@ public class UnionPayDataController {
         }
     }
 
+    @PostMapping(value = "/reconciliation/abnormal")
+    @ApiOperation(value = "新异常对账（按分类返回详细数据）")
+    @SaIgnore // todo 正式上线时，去掉此注解
+    public HttpResult reconciliationAbnormal(@RequestBody ReconciliationAbnormalQueryVO vo) {
+        // 新接口接收博物馆及核对起止日期，不分页；日期先后关系由对账服务统一校验。
+        if (vo == null || ObjectUtil.isEmpty(vo.getMuseumId())
+                || vo.getStartDate() == null || vo.getEndDate() == null) {
+            return HttpResult.errorBadRequest();
+        }
+        // 返回固定异常分类、分类明细、原始数据覆盖情况以及最终金额闭环结果。
+        ReconciliationAbnormalResult result = reconciliationService.findAbnormalData(vo);
+        return HttpResult.ok(result);
+    }
+
+
     @PostMapping("/billing")
     @ApiOperation(value = "各个博物馆的账单（已废弃）",
             notes = "请使用/reconciliation/abnormal响应中的billing字段")
@@ -113,20 +128,6 @@ public class UnionPayDataController {
         } else {
             return HttpResult.errorBadRequest();
         }
-    }
-
-    @PostMapping(value = "/reconciliation/abnormal")
-    @ApiOperation(value = "新异常对账（按分类返回详细数据）")
-    @SaIgnore
-    public HttpResult reconciliationAbnormal(@RequestBody ReconciliationAbnormalQueryVO vo) {
-        // 新接口接收博物馆及核对起止日期，不分页；日期先后关系由对账服务统一校验。
-        if (vo == null || ObjectUtil.isEmpty(vo.getMuseumId())
-                || vo.getStartDate() == null || vo.getEndDate() == null) {
-            return HttpResult.errorBadRequest();
-        }
-        // 返回固定异常分类、分类明细、原始数据覆盖情况以及最终金额闭环结果。
-        ReconciliationAbnormalResult result = reconciliationService.findAbnormalData(vo);
-        return HttpResult.ok(result);
     }
 
     @GetMapping(value = "/detail/{tradeNo}/{museumId}")

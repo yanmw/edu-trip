@@ -91,7 +91,7 @@ public class MuseumController {
 
     @GetMapping(value = "/findAll")
     @ApiOperation(value = "查询全部博物馆")
-//    @SaCheckPermission("sys:museum:search")
+//    @SaCheckPermission("sys:museum:search") todo 正式上线时，去掉此注解
     @SaIgnore
     public HttpResult findAll() {
         QueryWrapper<Museum> ew = new QueryWrapper<>();

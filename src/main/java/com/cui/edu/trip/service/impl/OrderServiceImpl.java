@@ -1650,10 +1650,21 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return msgResult(checkMsg);
         }
 
-        // 第六步：核销订单。核销成功时同时记录核销时间，方便后台追溯实际使用节点。
+        // 第六步：核销订单。
+        // 若为过期允许核销场景，verificationTime 记录为预约日期当天 23:59:59，日志 remark 同时标注真实核销时间。
         Integer beforeIsUsed = order.getIsUsed();
-        markOrderUsed(order);
-        saveVerificationSuccessLog(order, beforeIsUsed);
+        boolean isExpiredAllow = Boolean.TRUE.equals(vo.getAllowExpired())
+                && order.getAppointmentDate().isBefore(LocalDate.now());
+        if (isExpiredAllow) {
+            LocalDateTime expiredVerificationTime = order.getAppointmentDate().atTime(LocalTime.of(23, 59, 59));
+            LocalDateTime realNow = LocalDateTime.now();
+            markOrderUsedWithTime(order, expiredVerificationTime);
+            String remark = "订单核销成功（过期核销，真实核销时间：" + realNow.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + "）";
+            saveVerificationSuccessLog(order, beforeIsUsed, remark);
+        } else {
+            markOrderUsed(order);
+            saveVerificationSuccessLog(order, beforeIsUsed, "订单核销成功");
+        }
         return new HashMap(1);
     }
 
@@ -2205,7 +2216,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         if (order.getAppointmentDate().isAfter(LocalDate.now())) {
             return "预约日期未到，无法核销";
         }
-        if (order.getAppointmentDate().isBefore(LocalDate.now())) {
+        // allowExpired=true 时允许核销预约日期已过的订单，否则正常拦截。
+        if (order.getAppointmentDate().isBefore(LocalDate.now()) && !Boolean.TRUE.equals(vo.getAllowExpired())) {
             return "预约日期已过期，无法核销";
         }
         if (Order.OrderStatusEnum.PAYING.getValue().equals(order.getOrderStatus())) {
@@ -2265,6 +2277,18 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         // isUsed 表示最终核销结果，verificationTime 记录本次核销实际发生时间。
         order.setIsUsed(SysConstants.IS_TRUE);
         order.setVerificationTime(LocalDateTime.now());
+        super.updateById(order);
+    }
+
+    /**
+     * 将订单标记为已核销，并指定核销时间（用于过期订单按预约日期当天 23:59:59 记录）。
+     *
+     * @param order            主订单
+     * @param verificationTime 核销时间
+     */
+    private void markOrderUsedWithTime(Order order, LocalDateTime verificationTime) {
+        order.setIsUsed(SysConstants.IS_TRUE);
+        order.setVerificationTime(verificationTime);
         super.updateById(order);
     }
 
@@ -2848,7 +2872,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     /**
      * 记录订单核销成功日志。
      */
-    private void saveVerificationSuccessLog(Order order, Integer beforeIsUsed) {
+    private void saveVerificationSuccessLog(Order order, Integer beforeIsUsed, String remark) {
         OrderLog orderLog = buildOrderLog(order, OrderLog.LOG_TYPE_VERIFICATION,
                 OrderLog.ACTION_VERIFY_ORDER, OrderLog.SOURCE_USER);
         orderLog.setBeforeOrderStatus(order.getOrderStatus());
@@ -2856,7 +2880,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         orderLog.setBeforeIsUsed(beforeIsUsed);
         orderLog.setAfterIsUsed(order.getIsUsed());
         orderLog.setSuccess(SysConstants.IS_TRUE);
-        orderLog.setRemark("订单核销成功");
+        orderLog.setRemark(remark);
         saveOrderLog(orderLog);
     }
 

@@ -92,7 +92,7 @@ public class UnionPayDataController {
 
     @PostMapping(value = "/reconciliation/abnormal")
     @ApiOperation(value = "新异常对账（按分类返回详细数据）")
-    @SaIgnore // todo 正式上线时，去掉此注解
+    @SaIgnore
     public HttpResult reconciliationAbnormal(@RequestBody ReconciliationAbnormalQueryVO vo) {
         // 新接口接收博物馆及核对起止日期，不分页；日期先后关系由对账服务统一校验。
         if (vo == null || ObjectUtil.isEmpty(vo.getMuseumId())

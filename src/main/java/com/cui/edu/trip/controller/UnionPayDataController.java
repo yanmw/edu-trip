@@ -5,6 +5,12 @@ import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.ExcelWriter;
+import com.alibaba.excel.annotation.ExcelProperty;
+import com.alibaba.excel.write.handler.AbstractSheetWriteHandler;
+import com.alibaba.excel.write.metadata.WriteSheet;
+import com.alibaba.excel.write.metadata.holder.WriteSheetHolder;
+import com.alibaba.excel.write.metadata.holder.WriteWorkbookHolder;
 import com.cui.edu.common.HttpResult;
 import com.cui.edu.system.service.MuseumService;
 import com.cui.edu.trip.entity.unionpay.UnionPayDataV2;
@@ -21,14 +27,20 @@ import io.swagger.annotations.ApiParam;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import javax.servlet.http.HttpServletResponse;
 
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -53,6 +65,7 @@ public class UnionPayDataController {
 
     @PostMapping("/uploadUnionPay")
     @ApiOperation(value = "银联excel导入（自动兼容格式一和格式二）")
+    @SaIgnore // TODO 调试对账时去掉权限
     public HttpResult uploadUnionPay(MultipartFile file) throws IOException {
         byte[] fileBytes = file.getBytes();
         if (isUnionPayFormatV2(fileBytes)) {
@@ -92,7 +105,7 @@ public class UnionPayDataController {
 
     @PostMapping(value = "/reconciliation/abnormal")
     @ApiOperation(value = "新异常对账（按分类返回详细数据）")
-    @SaIgnore
+    @SaIgnore // TODO 调试对账时去掉权限
     public HttpResult reconciliationAbnormal(@RequestBody ReconciliationAbnormalQueryVO vo) {
         // 新接口接收博物馆及核对起止日期，不分页；日期先后关系由对账服务统一校验。
         if (vo == null || ObjectUtil.isEmpty(vo.getMuseumId())
@@ -102,6 +115,95 @@ public class UnionPayDataController {
         // 返回固定异常分类、分类明细、原始数据覆盖情况以及最终金额闭环结果。
         ReconciliationAbnormalResult result = reconciliationService.findAbnormalData(vo);
         return HttpResult.ok(result);
+    }
+
+    @PostMapping(value = "/reconciliation/export")
+    @ApiOperation(value = "导出对账账单（租赁信息、退款信息、每日租赁数据）")
+    @SaIgnore // TODO 调试对账时去掉权限
+    public void exportReconciliation(@RequestBody ReconciliationAbnormalQueryVO vo,
+                                     HttpServletResponse response) throws IOException {
+        ReconciliationAbnormalResult result = reconciliationService.findAbnormalData(vo);
+        String filename = "对账账单_" + result.getStartDate() + "_" + result.getEndDate() + ".xlsx";
+        String encodedFilename = URLEncoder.encode(filename, StandardCharsets.UTF_8.name())
+                .replace("+", "%20");
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedFilename);
+
+        ExcelWriter writer = EasyExcel.write(response.getOutputStream()).build();
+        try {
+            writer.write(result.getRentalExportDetails(), exportSheet(0, "租赁信息",
+                    ReconciliationAbnormalResult.RentalExportDetail.class, result.getRentalExportDetails()));
+            writer.write(result.getRefundExportDetails(), exportSheet(1, "退款信息",
+                    ReconciliationAbnormalResult.RefundExportDetail.class, result.getRefundExportDetails()));
+            writer.write(result.getDailyRentalExportDetails(), exportSheet(2, "每日租赁数据",
+                    ReconciliationAbnormalResult.DailyRentalExportDetail.class,
+                    result.getDailyRentalExportDetails()));
+        } finally {
+            writer.finish();
+        }
+    }
+
+    private <T> WriteSheet exportSheet(int sheetNo, String sheetName, Class<T> rowType, List<T> rows) {
+        int[] columnWidths = measureColumnWidths(rowType, rows);
+        return EasyExcel.writerSheet(sheetNo, sheetName).head(rowType)
+                .registerWriteHandler(new DataBasedColumnWidthStyleStrategy(columnWidths)).build();
+    }
+
+    private <T> int[] measureColumnWidths(Class<T> rowType, List<T> rows) {
+        List<Field> columns = Arrays.stream(rowType.getDeclaredFields())
+                .filter(field -> field.isAnnotationPresent(ExcelProperty.class))
+                .collect(Collectors.toList());
+        int[] widths = new int[columns.size()];
+        for (int index = 0; index < columns.size(); index++) {
+            Field field = columns.get(index);
+            field.setAccessible(true);
+            String[] headers = field.getAnnotation(ExcelProperty.class).value();
+            String header = headers.length == 0 ? "" : headers[0];
+            int width = displayWidth(header);
+            for (T row : rows) {
+                try {
+                    width = Math.max(width, displayWidth(displayValue(field.get(row))));
+                } catch (IllegalAccessException exception) {
+                    throw new IllegalStateException("无法读取账单列内容：" + field.getName(), exception);
+                }
+            }
+            // 时间值以文本写入，给完整的yyyy-MM-dd HH:mm:ss预留空间，日期列也保留固定可读宽度。
+            if (header.contains("时间")) {
+                width = Math.max(width, 28);
+            } else if ("日期".equals(header)) {
+                width = Math.max(width, 14);
+            }
+            // 留出单元格内边距，避免刚好贴边；Excel 单列宽度最大为255字符。
+            widths[index] = Math.max(10, Math.min(255, width + 4));
+        }
+        return widths;
+    }
+
+    private String displayValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private int displayWidth(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0;
+        }
+        return value.codePoints().map(codePoint -> codePoint > 0xFF ? 2 : 1).sum();
+    }
+
+    private static class DataBasedColumnWidthStyleStrategy extends AbstractSheetWriteHandler {
+        private final int[] columnWidths;
+
+        private DataBasedColumnWidthStyleStrategy(int[] columnWidths) {
+            this.columnWidths = columnWidths;
+        }
+
+        @Override
+        public void afterSheetCreate(WriteWorkbookHolder writeWorkbookHolder, WriteSheetHolder writeSheetHolder) {
+            for (int index = 0; index < columnWidths.length; index++) {
+                writeSheetHolder.getSheet().setColumnWidth(index, columnWidths[index] * 256);
+            }
+        }
     }
 
 

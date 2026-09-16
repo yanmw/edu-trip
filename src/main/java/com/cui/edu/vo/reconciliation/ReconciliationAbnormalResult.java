@@ -1,6 +1,8 @@
 package com.cui.edu.vo.reconciliation;
 
+import com.alibaba.excel.annotation.ExcelProperty;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -33,6 +35,13 @@ public class ReconciliationAbnormalResult {
     private SourceControl sourceControl = new SourceControl();
     /** 核对区间内有效核销账单，替代旧/billing接口。 */
     private Billing billing = new Billing();
+    /** 导出专用明细，不放进对账查询JSON响应。 */
+    @JsonIgnore
+    private List<RentalExportDetail> rentalExportDetails = new ArrayList<>();
+    @JsonIgnore
+    private List<RefundExportDetail> refundExportDetails = new ArrayList<>();
+    @JsonIgnore
+    private List<DailyRentalExportDetail> dailyRentalExportDetails = new ArrayList<>();
     /** 按大类、具体异常类型组织的异常详情。 */
     private List<AbnormalGroup> groups = new ArrayList<>();
 
@@ -119,6 +128,62 @@ public class ReconciliationAbnormalResult {
         /** 有效核销子订单数量。 */
         private long quantity;
         /** 有效核销金额，单位分。 */
+        private long amount;
+    }
+
+    @Data
+    public static class RentalExportDetail {
+        @ExcelProperty("系统订单号")
+        private String systemOrderNo;
+        @ExcelProperty("活动名称")
+        private String activityName;
+        @ExcelProperty("数量")
+        private int quantity;
+        @ExcelProperty("银联单号")
+        private String unionPayOrderNo;
+        @ExcelProperty("支付金额(单位：分)")
+        private long payAmount;
+        @ExcelProperty("订单创建时间")
+        private String orderCreateTime;
+        @ExcelProperty("订单核销时间")
+        private String verificationTime;
+    }
+
+    @Data
+    public static class RefundExportDetail {
+        @ExcelProperty("系统订单号")
+        private String systemOrderNo;
+        @ExcelProperty("活动名称")
+        private String activityName;
+        @ExcelProperty("订单数量")
+        private int quantity;
+        @ExcelProperty("银联单号")
+        private String unionPayOrderNo;
+        @ExcelProperty("支付金额(单位：分)")
+        private long payAmount;
+        @ExcelProperty("退款金额(单位：分)")
+        private long refundAmount;
+        @ExcelProperty("退款数量")
+        private int refundQuantity;
+        @ExcelProperty("退款状态")
+        private String refundStatus;
+        @ExcelProperty("订单创建时间")
+        private String orderCreateTime;
+        @ExcelProperty("退款时间")
+        private String refundTime;
+    }
+
+    @Data
+    public static class DailyRentalExportDetail {
+        @ExcelProperty("日期")
+        private String date;
+        @ExcelProperty("活动名称")
+        private String activityName;
+        @ExcelProperty("数量")
+        private long quantity;
+        @ExcelProperty("单价(单位：分)")
+        private long unitPrice;
+        @ExcelProperty("金额")
         private long amount;
     }
 

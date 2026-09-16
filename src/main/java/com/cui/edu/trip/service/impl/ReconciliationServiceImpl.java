@@ -25,6 +25,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -45,6 +46,8 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private static final String TYPE_PAY = "消费";
     private static final String TYPE_REFUND = "联机退货";
     private static final int QUERY_BATCH_SIZE = 500;
+    private static final DateTimeFormatter EXPORT_DATE_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final String GROUP_PAYMENT = "PAYMENT_VERIFICATION";
     private static final String GROUP_REFUND = "REFUND";
@@ -121,7 +124,9 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         // 查询候选主订单的全部子订单，核销有效金额及累计退款都以子订单为准。
         List<OrderDetail> allOrderDetails = findOrderDetails(orders);
         // 批量查询子订单关联的活动，替代旧详情接口中过时的product表关联。
-        Map<Long, ActivityManage> activityMap = findActivities(allOrderDetails);
+        List<OrderDetail> activityLookupDetails = new ArrayList<>(allOrderDetails);
+        activityLookupDetails.addAll(currentRefundDetails);
+        Map<Long, ActivityManage> activityMap = findActivities(activityLookupDetails);
         // unionpay_order_no与merchant_order_no相同，以该值组装一份订单级对账台账。
         LinkedHashMap<String, Ledger> ledgers = buildLedgers(orders, allOrderDetails, currentUnionRows,
                 historicalUnionRows, activityMap);
@@ -135,6 +140,11 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         ReconciliationAbnormalResult result = initializeResult(vo);
         Map<String, ReconciliationAbnormalResult.AbnormalCategory> categoryMap = indexCategories(result);
         Map<String, ReconciliationAbnormalResult.BillingDetail> billingMap = new LinkedHashMap<>();
+        Map<String, ReconciliationAbnormalResult.DailyRentalExportDetail> dailyRentalMap = new LinkedHashMap<>();
+        Map<String, ReconciliationAbnormalResult.RentalExportDetail> rentalExportMap = new LinkedHashMap<>();
+        Map<Long, Order> ordersById = orders.stream().filter(order -> order.getId() != null)
+                .collect(Collectors.toMap(Order::getId, order -> order, (first, ignored) -> first,
+                        LinkedHashMap::new));
         long unclassifiedCount = 0L;
 
         for (Ledger ledger : ledgers.values()) {
@@ -142,6 +152,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
             LedgerMetrics metrics = calculateMetrics(ledger, period, sourceTracker);
             // 同一批已加载数据同步生成活动维度的有效核销账单，替代旧/billing查询。
             accumulateBilling(billingMap, ledger, period);
+            accumulateRentalExport(rentalExportMap, dailyRentalMap, ledger, period);
             // 同一订单允许命中多个异常标签，例如“区间前支付、核对期核销”同时伴随退款异常。
             List<AnomalyHit> hits = classify(ledger, metrics, period, duplicatedReferences);
             // 单笔调整额恒等于：系统核对期有效核销金额 - 银联核对期净额。
@@ -163,6 +174,9 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         // 完成分类数量、数据覆盖统计以及最终加减闭环校验。
         finishBilling(result, billingMap);
+        result.setRentalExportDetails(sortedRentalExportDetails(rentalExportMap));
+        result.setRefundExportDetails(buildRefundExportDetails(currentRefundDetails, ordersById, activityMap));
+        result.setDailyRentalExportDetails(sortedDailyRentalExportDetails(dailyRentalMap));
         finishCategories(result);
         finishSourceControl(result, sourceTracker, unclassifiedCount);
         finishBalance(result);
@@ -1031,6 +1045,150 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 item.setAmount(item.getAmount() + safeLong(detail.getOrderAmount()));
             }
         }
+    }
+
+    private void accumulateRentalExport(
+            Map<String, ReconciliationAbnormalResult.RentalExportDetail> rentalExportMap,
+            Map<String, ReconciliationAbnormalResult.DailyRentalExportDetail> dailyRentalMap,
+            Ledger ledger, QueryPeriod period) {
+        for (Order order : ledger.orders) {
+            if (!Integer.valueOf(1).equals(order.getIsUsed())
+                    || !inPeriod(order.getVerificationTime(), period)
+                    || !isValidVerifiedOrderStatus(order.getOrderStatus())) {
+                continue;
+            }
+            LocalDate verificationDate = order.getVerificationTime().toLocalDate();
+            for (OrderDetail detail : ledger.details) {
+                if (!Objects.equals(order.getId(), detail.getOrderId())
+                        || !OrderDetail.OrderDetailStatusEnum.PAY_SUCCESS.getValue()
+                        .equals(detail.getOrderStatus())) {
+                    continue;
+                }
+                ActivityManage activity = ledger.activities.get(detail.getActivityId());
+                String activityName = activityName(activity, detail.getActivityId());
+                long unitPrice = safeLong(detail.getOrderAmount());
+                String rentalKey = order.getId() + "|" + detail.getActivityId();
+                ReconciliationAbnormalResult.RentalExportDetail rental = rentalExportMap.computeIfAbsent(
+                        rentalKey, ignored -> {
+                            ReconciliationAbnormalResult.RentalExportDetail value =
+                                    new ReconciliationAbnormalResult.RentalExportDetail();
+                            value.setSystemOrderNo(order.getOrderNo());
+                            value.setActivityName(activityName);
+                            value.setUnionPayOrderNo(order.getUnionpayOrderNo());
+                            value.setOrderCreateTime(formatExportDateTime(order.getCreateTime()));
+                            value.setVerificationTime(formatExportDateTime(order.getVerificationTime()));
+                            return value;
+                        });
+                rental.setQuantity(rental.getQuantity() + 1);
+                rental.setPayAmount(rental.getPayAmount() + safeLong(detail.getOrderAmount()));
+
+                String dailyKey = verificationDate + "|" + detail.getActivityId() + "|" + unitPrice;
+                ReconciliationAbnormalResult.DailyRentalExportDetail daily = dailyRentalMap.computeIfAbsent(
+                        dailyKey, ignored -> {
+                            ReconciliationAbnormalResult.DailyRentalExportDetail value =
+                                    new ReconciliationAbnormalResult.DailyRentalExportDetail();
+                            value.setDate(verificationDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
+                            value.setActivityName(activityName);
+                            value.setUnitPrice(unitPrice);
+                            return value;
+                        });
+                daily.setQuantity(daily.getQuantity() + 1L);
+                daily.setAmount(daily.getAmount() + safeLong(detail.getOrderAmount()));
+            }
+        }
+    }
+
+    private List<ReconciliationAbnormalResult.RefundExportDetail> buildRefundExportDetails(
+            List<OrderDetail> currentRefundDetails, Map<Long, Order> ordersById,
+            Map<Long, ActivityManage> activityMap) {
+        Map<String, ReconciliationAbnormalResult.RefundExportDetail> refundMap = new LinkedHashMap<>();
+        for (OrderDetail detail : currentRefundDetails) {
+            Order order = ordersById.get(detail.getOrderId());
+            ActivityManage activity = activityMap.get(detail.getActivityId());
+            String activityName = activityName(activity, detail.getActivityId());
+            String refundKey = detail.getOrderId() + "|" + detail.getActivityId() + "|" + detail.getRefundTime();
+            ReconciliationAbnormalResult.RefundExportDetail refund = refundMap.computeIfAbsent(
+                    refundKey, ignored -> {
+                        ReconciliationAbnormalResult.RefundExportDetail value =
+                                new ReconciliationAbnormalResult.RefundExportDetail();
+                        value.setSystemOrderNo(order == null ? null : order.getOrderNo());
+                        value.setActivityName(activityName);
+                        value.setUnionPayOrderNo(order == null ? null : order.getUnionpayOrderNo());
+                        value.setQuantity(order == null || order.getOrderQuantity() == null
+                                ? 0 : order.getOrderQuantity());
+                        value.setRefundStatus(refundStatusText(order));
+                        value.setOrderCreateTime(order == null ? null : formatExportDateTime(order.getCreateTime()));
+                        value.setRefundTime(formatExportDateTime(detail.getRefundTime()));
+                        return value;
+                    });
+            refund.setPayAmount(refund.getPayAmount() + safeLong(detail.getOrderAmount()));
+            refund.setRefundAmount(refund.getRefundAmount() + safeLong(detail.getRefundAmount()));
+            refund.setRefundQuantity(refund.getRefundQuantity() + 1);
+        }
+        List<ReconciliationAbnormalResult.RefundExportDetail> details = new ArrayList<>(refundMap.values());
+        details.sort(Comparator
+                .comparing(ReconciliationAbnormalResult.RefundExportDetail::getRefundTime,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(ReconciliationAbnormalResult.RefundExportDetail::getSystemOrderNo,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(ReconciliationAbnormalResult.RefundExportDetail::getActivityName,
+                        Comparator.nullsLast(String::compareTo)));
+        return details;
+    }
+
+    private String refundStatusText(Order order) {
+        if (order == null || order.getOrderStatus() == null) {
+            return "未知";
+        }
+        Integer orderStatus = order.getOrderStatus();
+        if (Order.OrderStatusEnum.ALL_REFUND.getValue().equals(orderStatus)) {
+            return "全额退款";
+        }
+        if (Order.OrderStatusEnum.PARTIAL_REFUND.getValue().equals(orderStatus)) {
+            return "部分退款";
+        }
+        if (Order.OrderStatusEnum.REFUNDING.getValue().equals(orderStatus)) {
+            return "退款中";
+        }
+        return "状态异常";
+    }
+
+    private List<ReconciliationAbnormalResult.RentalExportDetail> sortedRentalExportDetails(
+            Map<String, ReconciliationAbnormalResult.RentalExportDetail> rentalExportMap) {
+        List<ReconciliationAbnormalResult.RentalExportDetail> details =
+                new ArrayList<>(rentalExportMap.values());
+        details.sort(Comparator
+                .comparing(ReconciliationAbnormalResult.RentalExportDetail::getVerificationTime,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(ReconciliationAbnormalResult.RentalExportDetail::getSystemOrderNo,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(ReconciliationAbnormalResult.RentalExportDetail::getActivityName,
+                        Comparator.nullsLast(String::compareTo)));
+        return details;
+    }
+
+    private List<ReconciliationAbnormalResult.DailyRentalExportDetail> sortedDailyRentalExportDetails(
+            Map<String, ReconciliationAbnormalResult.DailyRentalExportDetail> dailyRentalMap) {
+        List<ReconciliationAbnormalResult.DailyRentalExportDetail> details =
+                new ArrayList<>(dailyRentalMap.values());
+        details.sort(Comparator
+                .comparing(ReconciliationAbnormalResult.DailyRentalExportDetail::getDate,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(ReconciliationAbnormalResult.DailyRentalExportDetail::getActivityName,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparingLong(ReconciliationAbnormalResult.DailyRentalExportDetail::getUnitPrice));
+        return details;
+    }
+
+    private String activityName(ActivityManage activity, Long activityId) {
+        if (activity != null) {
+            return activity.getActivityName();
+        }
+        return activityId == null ? "未知活动" : "活动ID " + activityId;
+    }
+
+    private String formatExportDateTime(LocalDateTime value) {
+        return value == null ? null : value.format(EXPORT_DATE_TIME_FORMAT);
     }
 
     private void finishBilling(ReconciliationAbnormalResult result,

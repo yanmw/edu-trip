@@ -47,14 +47,16 @@ public class UnionPayData implements Serializable {
     @ExcelProperty("终端号")
     private String tid;
 
-    @ApiModelProperty(value = "结算日期")
-    @ExcelProperty("结算日期")
+    @ApiModelProperty(value = "清算日期")
+    @ExcelProperty("清算日期")
+    @com.alibaba.excel.annotation.format.DateTimeFormat("yyyy-MM-dd")
     @JsonFormat(pattern = "yyyy-MM-dd")
     @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate settlementDate;
 
     @ApiModelProperty(value = "交易时间")
     @ExcelProperty("交易时间")
+    @com.alibaba.excel.annotation.format.DateTimeFormat("yyyy-MM-dd HH:mm:ss")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime transactionTime;

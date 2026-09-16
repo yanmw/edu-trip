@@ -54,6 +54,23 @@
                 </button>
             </form>
             <div id="query-message" class="inline-message hidden" role="alert"></div>
+
+            <div class="upload-divider" aria-hidden="true"></div>
+            <form id="unionpay-upload-form" class="upload-form">
+                <div class="upload-copy">
+                    <span class="upload-mark" aria-hidden="true">↑</span>
+                    <div>
+                        <h3>导入银联账单</h3>
+                    </div>
+                </div>
+                <label class="upload-file-picker">
+                    <span class="upload-file-icon" aria-hidden="true">＋</span>
+                    <span id="unionpay-file-name">选择账单文件</span>
+                    <input id="unionpay-file" name="file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="选择银联账单 Excel 文件">
+                </label>
+                <button id="upload-button" class="button secondary" type="submit">导入账单</button>
+                <p id="upload-message" class="upload-message hidden" role="status" aria-live="polite"></p>
+            </form>
         </section>
 
         <section id="initial-state" class="welcome-state">
@@ -86,7 +103,7 @@
                     <p id="result-summary">—</p>
                 </div>
                 <div class="header-actions">
-                    <button id="export-button" class="button secondary" type="button">导出 JSON</button>
+                    <button id="export-button" class="button secondary" type="button">导出账单</button>
                     <button id="refresh-button" class="button ghost compact-button" type="button">重新查询</button>
                 </div>
             </section>

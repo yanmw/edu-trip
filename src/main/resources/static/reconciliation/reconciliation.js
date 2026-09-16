@@ -3,8 +3,11 @@
 
     const API = {
         museums: '/system/museum/findAll',
-        reconciliation: '/trip/union-pay-data/reconciliation/abnormal'
+        uploadUnionPay: '/trip/union-pay-data/uploadUnionPay',
+        reconciliation: '/trip/union-pay-data/reconciliation/abnormal',
+        reconciliationExport: '/trip/union-pay-data/reconciliation/export'
     };
+    const API_ORIGIN = window.location.protocol === 'file:' ? 'http://localhost:8020' : '';
 
     const state = {
         result: null,
@@ -44,17 +47,33 @@
     function requestHeaders() {
         const headers = { 'Content-Type': 'application/json' };
         // 兼容项目常见的Sa-Token本地存储方式；Cookie登录时浏览器会自动携带凭证。
-        const token = localStorage.getItem('sa-token') || sessionStorage.getItem('sa-token');
+        let token = '';
+        try {
+            token = localStorage.getItem('sa-token') || sessionStorage.getItem('sa-token') || '';
+        } catch (_) {
+            // file:// 页面可能禁止访问 Web Storage；当前对账接口仍可匿名访问。
+        }
         if (token) headers['sa-token'] = token;
         return headers;
     }
 
     async function request(url, options = {}) {
-        const response = await fetch(url, {
-            credentials: 'same-origin',
-            ...options,
-            headers: { ...requestHeaders(), ...(options.headers || {}) }
-        });
+        const headers = { ...requestHeaders(), ...(options.headers || {}) };
+        // Multipart Content-Type needs a browser-generated boundary.
+        if (options.body instanceof FormData) delete headers['Content-Type'];
+        let response;
+        try {
+            response = await fetch(`${API_ORIGIN}${url}`, {
+                credentials: 'same-origin',
+                ...options,
+                headers
+            });
+        } catch (error) {
+            if (error instanceof TypeError) {
+                throw new Error('无法连接本地对账服务，请确认后端已在 localhost:8020 启动。');
+            }
+            throw error;
+        }
         let payload;
         try {
             payload = await response.json();
@@ -65,6 +84,49 @@
             throw new Error(payload.msg || `请求失败（HTTP ${response.status}）`);
         }
         return payload.data;
+    }
+
+    function showUploadMessage(message, type = '') {
+        const uploadMessage = el('upload-message');
+        uploadMessage.textContent = message;
+        uploadMessage.classList.toggle('hidden', !message);
+        uploadMessage.classList.toggle('error', type === 'error');
+        uploadMessage.classList.toggle('success', type === 'success');
+    }
+
+    async function submitUnionPayUpload(event) {
+        event.preventDefault();
+        const fileInput = el('unionpay-file');
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            showUploadMessage('请先选择银联账单 Excel 文件。', 'error');
+            return;
+        }
+        if (!/\.xlsx?$/i.test(file.name)) {
+            showUploadMessage('文件格式不正确，请选择 .xls 或 .xlsx 文件。', 'error');
+            return;
+        }
+
+        const uploadButton = el('upload-button');
+        uploadButton.disabled = true;
+        fileInput.disabled = true;
+        uploadButton.textContent = '正在导入…';
+        showUploadMessage(`正在导入 ${file.name}，请稍候。`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            await request(API.uploadUnionPay, { method: 'POST', body: formData });
+            showUploadMessage('银联账单导入成功。', 'success');
+            fileInput.value = '';
+            el('unionpay-file-name').textContent = '选择账单文件';
+        } catch (error) {
+            showUploadMessage(error.message || '账单导入失败，请检查文件后重试。', 'error');
+        } finally {
+            fileInput.disabled = false;
+            uploadButton.disabled = false;
+            uploadButton.textContent = '导入账单';
+        }
     }
 
     async function loadMuseums() {
@@ -510,7 +572,7 @@
                     { key: 'handlingCharge', label: '手续费', format: formatMoney },
                     { key: 'netAmount', label: '净额', format: formatMoney },
                     { key: 'referenceNumber', label: '参考号' },
-                    { key: 'settlementDate', label: '结算日期' },
+                    { key: 'settlementDate', label: '清算日期' },
                     { key: 'channel', label: '交易渠道' },
                     { key: 'cardNo', label: '卡号' },
                     { key: 'mid', label: '商户号' },
@@ -524,7 +586,7 @@
                     { key: 'handlingCharge', label: '手续费', format: formatMoney },
                     { key: 'netAmount', label: '净额', format: formatMoney },
                     { key: 'referenceNumber', label: '参考号' },
-                    { key: 'settlementDate', label: '结算日期' },
+                    { key: 'settlementDate', label: '清算日期' },
                     { key: 'channel', label: '交易渠道' },
                     { key: 'cardNo', label: '卡号' },
                     { key: 'mid', label: '商户号' },
@@ -536,7 +598,7 @@
                     { key: 'transactionTime', label: '交易时间', format: formatDate },
                     { key: 'amount', label: '消费金额', format: formatMoney },
                     { key: 'referenceNumber', label: '参考号' },
-                    { key: 'settlementDate', label: '结算日期' },
+                    { key: 'settlementDate', label: '清算日期' },
                     { key: 'mid', label: '商户号' },
                     { key: 'tid', label: '终端号' },
                     { key: 'unionOrderNo', label: '银商订单号' }
@@ -548,7 +610,7 @@
                     { key: 'handlingCharge', label: '手续费', format: formatMoney },
                     { key: 'netAmount', label: '净额', format: formatMoney },
                     { key: 'referenceNumber', label: '参考号' },
-                    { key: 'settlementDate', label: '结算日期' },
+                    { key: 'settlementDate', label: '清算日期' },
                     { key: 'channel', label: '交易渠道' },
                     { key: 'cardNo', label: '卡号' },
                     { key: 'mid', label: '商户号' },
@@ -562,7 +624,7 @@
                     { key: 'handlingCharge', label: '手续费', format: formatMoney },
                     { key: 'netAmount', label: '净额', format: formatMoney },
                     { key: 'referenceNumber', label: '参考号' },
-                    { key: 'settlementDate', label: '结算日期' },
+                    { key: 'settlementDate', label: '清算日期' },
                     { key: 'channel', label: '交易渠道' },
                     { key: 'cardNo', label: '卡号' },
                     { key: 'mid', label: '商户号' },
@@ -592,16 +654,51 @@
         document.body.style.overflow = '';
     }
 
-    function downloadJson() {
-        if (!state.result) return;
-        const blob = new Blob([JSON.stringify(state.result, null, 2)], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `异常对账_${state.result.startDate}_${state.result.endDate}.json`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        showToast('JSON 文件已生成');
+    async function downloadBilling() {
+        if (!state.result) {
+            showToast('请先完成对账查询');
+            return;
+        }
+        if (state.demoMode) {
+            showToast('示例数据不能导出账单，请先查询实际数据');
+            return;
+        }
+
+        const exportButton = el('export-button');
+        exportButton.disabled = true;
+        exportButton.textContent = '正在生成…';
+        try {
+            const response = await fetch(`${API_ORIGIN}${API.reconciliationExport}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: requestHeaders(),
+                body: JSON.stringify({
+                    museumId: state.result.museumId,
+                    startDate: state.result.startDate,
+                    endDate: state.result.endDate
+                })
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.msg || `账单导出失败（HTTP ${response.status}）`);
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `对账账单_${state.result.startDate}_${state.result.endDate}.xlsx`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('账单已导出');
+        } catch (error) {
+            showToast(error.message || '账单导出失败，请稍后重试');
+        } finally {
+            exportButton.disabled = false;
+            exportButton.textContent = '导出账单';
+        }
     }
 
     let toastTimer;
@@ -747,6 +844,12 @@
     }
 
     form.addEventListener('submit', submitQuery);
+    el('unionpay-upload-form').addEventListener('submit', submitUnionPayUpload);
+    el('unionpay-file').addEventListener('change', event => {
+        const file = event.target.files && event.target.files[0];
+        el('unionpay-file-name').textContent = file ? file.name : '选择账单文件';
+        showUploadMessage('');
+    });
     startDateInput.addEventListener('change', () => {
         endDateInput.min = startDateInput.value;
         showQueryMessage('');
@@ -757,7 +860,7 @@
     });
     el('demo-button').addEventListener('click', renderDemo);
     el('refresh-button').addEventListener('click', () => form.requestSubmit());
-    el('export-button').addEventListener('click', downloadJson);
+    el('export-button').addEventListener('click', downloadBilling);
     showEmptyToggle.addEventListener('change', () => state.result && renderGroups(state.result.groups || []));
     el('group-tabs').addEventListener('click', event => {
         const button = event.target.closest('[data-group-code]');

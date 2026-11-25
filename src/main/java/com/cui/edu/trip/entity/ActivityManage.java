@@ -1,6 +1,7 @@
 package com.cui.edu.trip.entity;
 
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -76,6 +77,10 @@ public class ActivityManage implements Serializable {
     @JsonFormat(pattern = "yyyy-MM-dd")
     @DateTimeFormat(pattern = "yyyy-MM-dd")
     private LocalDate activityEndDate;
+
+    @ApiModelProperty(value = "不开放日期，格式 yyyy-MM-dd，多个用英文逗号分隔，空字符串表示无不开放日期")
+    @TableField(value = "closed_dates", updateStrategy = FieldStrategy.NOT_NULL)
+    private String closedDates;
 
     @ApiModelProperty(value = "报名须知")
     private String registrationNotice;

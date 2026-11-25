@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +31,24 @@ class ActivityManageServiceImplTest {
 
     static {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ActivityManage.class);
+    }
+
+    @Test
+    void validateClosedDatesChecksCalendarDatesAndActivityRange() {
+        ActivityManageServiceImpl service = new ActivityManageServiceImpl();
+        ActivityManage activity = new ActivityManage();
+        activity.setActivityStartDate(LocalDate.of(2026, 11, 1));
+        activity.setActivityEndDate(LocalDate.of(2026, 11, 30));
+
+        activity.setClosedDates("2026-11-01,2026-11-30");
+        assertNull(ReflectionTestUtils.invokeMethod(service, "validateClosedDates", activity));
+
+        activity.setClosedDates("2026-11-31");
+        assertEquals("不开放日期无效：2026-11-31", ReflectionTestUtils.invokeMethod(service, "validateClosedDates", activity));
+
+        activity.setClosedDates("2026-12-01");
+        assertEquals("不开放日期必须在活动起止日期内：2026-12-01",
+                ReflectionTestUtils.invokeMethod(service, "validateClosedDates", activity));
     }
 
     @Test

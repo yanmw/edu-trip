@@ -9,6 +9,7 @@ import com.cui.edu.common.SysConstants;
 import com.cui.edu.config.redis.DistributedLockHandler;
 import com.cui.edu.system.entity.Museum;
 import com.cui.edu.system.service.MuseumService;
+import com.cui.edu.trip.entity.ActivityManage;
 import com.cui.edu.trip.entity.Evaluation;
 import com.cui.edu.trip.entity.Order;
 import com.cui.edu.trip.entity.OrderDetail;
@@ -16,6 +17,7 @@ import com.cui.edu.trip.entity.OrderLog;
 import com.cui.edu.trip.entity.Team;
 import com.cui.edu.trip.entity.Visitor;
 import com.cui.edu.trip.mapper.OrderMapper;
+import com.cui.edu.trip.service.ActivityManageService;
 import com.cui.edu.trip.service.EvaluationService;
 import com.cui.edu.trip.service.OrderDetailService;
 import com.cui.edu.trip.service.OrderLogService;
@@ -304,6 +306,24 @@ class OrderServiceImplTest {
         assertEquals("团队游客A", teamOrderBatchOne.getTeam().getVisitorList().get(0).getName());
         assertEquals(1, teamOrderBatchTwo.getTeam().getVisitorList().size());
         assertEquals("团队游客B", teamOrderBatchTwo.getTeam().getVisitorList().get(0).getName());
+    }
+
+    @Test
+    void checkAppointmentDetailRejectsClosedDate() {
+        OrderServiceImpl orderService = orderService(mock(OrderMapper.class));
+        ActivityManageService activityManageService = mock(ActivityManageService.class);
+        ReflectionTestUtils.setField(orderService, "activityManageService", activityManageService);
+        AppointmentVO vo = baseAppointment();
+        vo.setAppointmentDate(LocalDate.of(2026, 11, 7));
+        ActivityManage activity = new ActivityManage();
+        activity.setActivityStartDate(LocalDate.of(2026, 11, 1));
+        activity.setActivityEndDate(LocalDate.of(2026, 11, 30));
+        activity.setClosedDates("2026-11-01,2026-11-07");
+        when(activityManageService.getById(11L)).thenReturn(activity);
+
+        String error = ReflectionTestUtils.invokeMethod(orderService, "checkAppointmentDetail", vo, vo.getList().get(0));
+
+        assertEquals("预约日期活动不开放", error);
     }
 
     @Test

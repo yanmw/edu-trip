@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -43,6 +45,9 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper, ActivityManage> implements ActivityManageService {
+
+    private static final int CLOSED_DATES_MAX_LENGTH = 4096;
+    private static final Pattern CLOSED_DATE_PATTERN = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
 
     @Autowired
     private ActivityScheduleService activityScheduleService;
@@ -58,7 +63,7 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
      * <p>
      * 业务规则：
      * 1. 进行基础参数的完整性校验（validateRequiredFields）。
-     * 2. 校验参与形式（团队/个人）和适用年龄分组是否合法。
+     * 2. 校验参与形式（团队/个人）和适用年龄分组和开放日期是否合法。
      * 3. 区分新增与更新逻辑：
      *    a. 新增活动：初始化状态为禁用 (status=0)，必须通过审核上架接口启用；若未设定删除标记，默认设为未删除。
      *    b. 更新活动：校验只读属性是否被篡改（validateImmutableFields，如类型、单价、博物馆、排期时间均不可改，改之则需新建活动）；状态沿用原活动状态，防篡改。
@@ -84,6 +89,10 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
         String ageGroupError = validateAgeGroup(record);
         if (ageGroupError != null) {
             return ageGroupError;
+        }
+        String closedDatesError = validateClosedDates(record);
+        if (closedDatesError != null) {
+            return closedDatesError;
         }
         // 4. 判断是新增还是修改
         if (record.getId() == null) {
@@ -525,6 +534,31 @@ public class ActivityManageServiceImpl extends ServiceImpl<ActivityManageMapper,
             return "联系方式不能为空";
         }
         return validateActivitySchedules(record.getActivityScheduleList());
+    }
+
+    private String validateClosedDates(ActivityManage record) {
+        String closedDates = record.getClosedDates();
+        if (closedDates == null || closedDates.isEmpty()) {
+            return null;
+        }
+        if (closedDates.length() > CLOSED_DATES_MAX_LENGTH) {
+            return "不开放日期总长度不能超过" + CLOSED_DATES_MAX_LENGTH + "个字符";
+        }
+        for (String dateValue : closedDates.split(",", -1)) {
+            if (!CLOSED_DATE_PATTERN.matcher(dateValue).matches()) {
+                return "不开放日期须为yyyy-MM-dd格式，多个日期用英文逗号分隔";
+            }
+            LocalDate date;
+            try {
+                date = LocalDate.parse(dateValue);
+            } catch (DateTimeParseException e) {
+                return "不开放日期无效：" + dateValue;
+            }
+            if (date.isBefore(record.getActivityStartDate()) || date.isAfter(record.getActivityEndDate())) {
+                return "不开放日期必须在活动起止日期内：" + dateValue;
+            }
+        }
+        return null;
     }
 
     private String validateActivitySchedules(List<ActivitySchedule> activityScheduleList) {

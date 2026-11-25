@@ -3444,6 +3444,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 || vo.getAppointmentDate().isAfter(activityManage.getActivityEndDate())) {
             return "预约日期不在活动开放日期范围内";
         }
+        String closedDates = activityManage.getClosedDates();
+        if (closedDates != null && Arrays.asList(closedDates.split(",")).contains(vo.getAppointmentDate().toString())) {
+            return "预约日期活动不开放";
+        }
         // 场次必须存在，并且必须挂在当前活动下，避免前端把其他活动的场次混传进来。
         ActivitySchedule activitySchedule = activityScheduleService.getById(detailVO.getActivityScheduleId());
         if (ObjectUtil.isEmpty(activitySchedule)) {
